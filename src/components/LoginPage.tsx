@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Cpu, ShoppingBag, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Cpu, LogIn, AlertCircle, Eye, EyeOff, User } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface LoginPageProps {
@@ -34,7 +34,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const industry = detectIndustry(username.trim());
     if (!industry) {
-      setError('无法识别账户类型。用户名请包含"零售"或"锂电"相关关键字');
+      setError('无法识别账户类型。用户名请包含"零售/来伊份"或"锂电/中创"相关关键字');
       return;
     }
 
@@ -77,24 +77,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   type="text"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setError(''); }}
-                  placeholder="如：retail_admin / battery_admin"
+                  placeholder="请输入用户名"
                   className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 focus:outline-none transition-all"
                   autoFocus
                 />
                 {detected && (
                   <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-                    <span className="text-gray-400">检测到行业：</span>
+                    <span className="text-gray-400">检测到账户类型：</span>
                     <span className={cn(
                       "px-2 py-0.5 rounded-full font-medium",
                       detected === 'retail'
                         ? "bg-amber-100 text-amber-700"
                         : "bg-blue-100 text-blue-700"
                     )}>
-                      {detected === 'retail' ? (
-                        <span className="flex items-center gap-1"><ShoppingBag size={10} /> 零售</span>
-                      ) : (
-                        <span className="flex items-center gap-1"><Cpu size={10} /> 锂电</span>
-                      )}
+                      <span className="flex items-center gap-1"><User size={10} /> 已识别</span>
                     </span>
                   </div>
                 )}
@@ -107,7 +103,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                    placeholder="默认密码：123456"
+                    placeholder="请输入密码"
                     className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 focus:outline-none transition-all pr-10"
                   />
                   <button
@@ -144,7 +140,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
 
           <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
-            <p className="text-xs text-gray-400 text-center">提示：零售账户请输入包含"零售/来伊份"的用户名；锂电账户请输入包含"锂电/中创"的用户名。密码均为 123456。</p>
+            <p className="text-xs text-gray-400 text-center">提示：用户名包含"零售/来伊份"或"锂电/中创"关键字即可识别账户。密码均为 123456。</p>
           </div>
         </div>
 
@@ -152,21 +148,21 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button
             onClick={() => { setUsername('retail_admin'); setPassword('123456'); setError(''); }}
-            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-amber-300 hover:bg-amber-50/50 transition-all text-left group"
+            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <ShoppingBag size={14} className="text-amber-600" />
-              <span className="text-xs font-semibold text-gray-700 group-hover:text-amber-700">零售演示账户</span>
+              <User size={14} className="text-gray-500" />
+              <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">账户 1</span>
             </div>
             <p className="text-[10px] text-gray-400">retail_admin / 123456</p>
           </button>
           <button
             onClick={() => { setUsername('battery_admin'); setPassword('123456'); setError(''); }}
-            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left group"
+            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <Cpu size={14} className="text-blue-600" />
-              <span className="text-xs font-semibold text-gray-700 group-hover:text-blue-700">锂电演示账户</span>
+              <User size={14} className="text-gray-500" />
+              <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">账户 2</span>
             </div>
             <p className="text-[10px] text-gray-400">battery_admin / 123456</p>
           </button>

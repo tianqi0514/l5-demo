@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import React, { useState, useEffect } from 'react';
 import {
   Bot, Plus, Search, Settings, Cpu, BrainCircuit, Database, Wrench,
@@ -933,162 +932,209 @@ export default function AgentStudio() {
 }
 
 // ============================================================
-// 锂电版推演知识图谱组件
+// 锂电版推演知识图谱组件 —— 网络图可视化
 // ============================================================
 
-interface BatteryReasoningNode {
+type GraphNodeType = 'intent' | 'ontology' | 'data' | 'skill' | 'constraint' | 'simulation' | 'result';
+
+interface GraphNode {
   id: string;
   label: string;
-  icon: 'brain' | 'database' | 'arrow' | 'wrench' | 'shield' | 'play' | 'file';
-  skills: string[];
-  dataSources: string[];
-  ontologies: string[];
+  type: GraphNodeType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   description: string;
+  details?: string[];
   output?: string;
+  icon: string;
 }
 
-const BATTERY_REASONING_FLOWS: Record<string, BatteryReasoningNode[]> = {
-  a1: [
-    {
-      id: 'intent', label: '意图解析', icon: 'brain',
-      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
-      description: '解析"Q3产能瓶颈应对"意图，提取时间维度、约束条件、决策目标',
-      output: '意图: 产能优化 | 时间: Q3 | 约束: 准时交付>95%'
-    },
-    {
-      id: 'ontology', label: '本体识别', icon: 'database',
-      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['ProductionLine', 'WorkOrder', 'Equipment', 'Material', 'SalesOrder'],
-      description: '从本体库识别生产相关实体，建立产线-工单-设备-物料关联图谱',
-      output: '识别5个核心本体，建立产线全链路知识图谱'
-    },
-    {
-      id: 'binding', label: '数据绑定', icon: 'arrow',
-      skills: ['data_mapper_v1'], dataSources: ['MES_DB', 'ERP_API', 'SCADA_Stream'],
-      ontologies: ['ProductionLine', 'WorkOrder', 'Equipment'],
-      description: '将本体映射到MES、ERP、SCADA实时数据流，建立参数化查询',
-      output: '绑定3个数据源，覆盖4基地28条产线实时数据'
-    },
-    {
-      id: 'skill', label: '技能调用', icon: 'wrench',
-      skills: ['capacity_planning_v1', 'production_scheduling_v1', 'oee_optimizer_v2'],
-      dataSources: ['MES_DB', 'ERP_API'], ontologies: ['ProductionLine', 'WorkOrder', 'Equipment'],
-      description: '调用产能规划、排程优化、OEE优化技能，并行计算瓶颈分析',
-      output: '瓶颈定位完成：B基地L3产线产能利用率仅78%'
-    },
-    {
-      id: 'constraint', label: '约束注入', icon: 'shield',
-      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['WorkOrder', 'SalesOrder'],
-      description: '应用硬约束（产能利用率>96%，准时交付>95%）和软约束（成本最优）',
-      output: '当前方案不满足约束，需生成替代方案'
-    },
-    {
-      id: 'simulation', label: '推演计算', icon: 'play',
-      skills: ['monte_carlo_v1', 'discrete_event_sim_v1'], dataSources: ['MES_DB', 'Demand_Forecast'],
-      ontologies: ['ProductionLine', 'WorkOrder', 'SalesOrder'],
-      description: '离散事件仿真生成加班/调线/外包三套方案，预测各方案KPI',
-      output: '加班: 成本+8% 准交+3% | 调线: 成本+2% 准交+1% | 外包: 成本+15% 准交+5%'
-    },
-    {
-      id: 'result', label: '结果输出', icon: 'file',
-      skills: ['result_formatter_v1'], dataSources: ['推演结果集'], ontologies: ['WorkOrder', 'SalesOrder'],
-      description: '结构化输出最优方案（调线+部分外包），附带决策依据',
-      output: '推荐调线方案：成本最低且满足交付约束，置信度91%'
-    },
-  ],
-  a2: [
-    {
-      id: 'intent', label: '意图解析', icon: 'brain',
-      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
-      description: '解析"产线设备异常诊断"意图，识别异常类型、设备编号',
-      output: '意图: 异常诊断 | 设备: L3-涂布机-02 | 类型: 温度异常'
-    },
-    {
-      id: 'ontology', label: '本体识别', icon: 'database',
-      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['Equipment', 'ProductionLine', 'QualityCheck', 'Material'],
-      description: '识别设备相关本体，构建设备-工序-质量检测关联图谱',
-      output: '识别4个核心本体，构建设备故障知识图谱'
-    },
-    {
-      id: 'binding', label: '数据绑定', icon: 'arrow',
-      skills: ['data_mapper_v1'], dataSources: ['SCADA_Stream', 'IoT_Sensors', 'Maintenance_DB'],
-      ontologies: ['Equipment', 'ProductionLine'],
-      description: '绑定SCADA实时数据、IoT传感器、维保历史记录',
-      output: '实时数据管道建立，覆盖温度/压力/振动/电流全量传感器'
-    },
-    {
-      id: 'skill', label: '技能调用', icon: 'wrench',
-      skills: ['anomaly_detector_v1', 'root_cause_analyzer_v1', 'predictive_maintenance_v1'],
-      dataSources: ['SCADA_Stream', 'Maintenance_DB'], ontologies: ['Equipment'],
-      description: '调用异常检测、根因分析、预测性维护技能，多维分析故障',
-      output: '检测到温度异常模式，匹配历史故障案例库中的3个相似案例'
-    },
-    {
-      id: 'constraint', label: '约束注入', icon: 'shield',
-      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['Equipment', 'ProductionLine'],
-      description: '应用约束：设备停机时间<4h，维修成本<5万，安全标准',
-      output: '当前故障预计维修时间2h，满足所有约束'
-    },
-    {
-      id: 'simulation', label: '推演计算', icon: 'play',
-      skills: ['impact_simulator_v1'], dataSources: ['MES_DB', 'Schedule_DB'],
-      ontologies: ['ProductionLine', 'WorkOrder'],
-      description: '仿真故障对产线排程的影响，计算调产方案和产能损失',
-      output: '预计产能损失120pcs，可通过调线弥补80%缺口'
-    },
-    {
-      id: 'result', label: '结果输出', icon: 'file',
-      skills: ['result_formatter_v1'], dataSources: ['分析结果集'], ontologies: ['Equipment'],
-      description: '输出故障诊断报告：加热管老化导致温度异常，建议更换',
-      output: '根因: 加热管老化 | 建议: 立即更换 | 预计恢复: 2h'
-    },
-  ],
-  a3: [
-    {
-      id: 'intent', label: '意图解析', icon: 'brain',
-      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
-      description: '解析"批次质量缺陷追溯"意图，识别批次号、缺陷类型',
-      output: '意图: 质量追溯 | 批次: BT-2024-Q3-8847 | 缺陷: 容量衰减'
-    },
-    {
-      id: 'ontology', label: '本体识别', icon: 'database',
-      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['Product', 'WorkOrder', 'QualityCheck', 'Material', 'Equipment'],
-      description: '识别质量追溯相关本体，构建产品-工单-质检-物料全链路图谱',
-      output: '识别5个核心本体，构建质量追溯知识图谱'
-    },
-    {
-      id: 'binding', label: '数据绑定', icon: 'arrow',
-      skills: ['data_mapper_v1'], dataSources: ['QMS_DB', 'MES_DB', 'WMS_DB'],
-      ontologies: ['Product', 'WorkOrder', 'QualityCheck'],
-      description: '绑定质量管理系统、MES制造数据、WMS物料数据',
-      output: '数据绑定完成，覆盖该批次全生命周期数据'
-    },
-    {
-      id: 'skill', label: '技能调用', icon: 'wrench',
-      skills: ['traceability_query_v1', 'correlation_analyzer_v1'],
-      dataSources: ['QMS_DB', 'MES_DB'], ontologies: ['Product', 'WorkOrder', 'QualityCheck'],
-      description: '调用追溯查询和关联分析技能，跨工序追踪缺陷源头',
-      output: '追溯完成：定位到负极涂布工序参数偏移'
-    },
-    {
-      id: 'constraint', label: '约束注入', icon: 'shield',
-      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['QualityCheck', 'Product'],
-      description: '应用质量约束：CPK>1.33，不良率<0.5%，追溯完整度100%',
-      output: '该批次CPK=1.15，不满足质量约束，触发预警'
-    },
-    {
-      id: 'simulation', label: '推演计算', icon: 'play',
-      skills: ['impact_analyzer_v1'], dataSources: ['QMS_DB', 'Sales_DB'],
-      ontologies: ['Product', 'SalesOrder'],
-      description: '分析缺陷影响范围：同批次产品、同供应商物料、同设备时段',
-      output: '影响范围：同批次200pcs + 同供应商3批次共600pcs'
-    },
-    {
-      id: 'result', label: '结果输出', icon: 'file',
-      skills: ['result_formatter_v1'], dataSources: ['分析结果集'], ontologies: ['Product', 'QualityCheck'],
-      description: '输出质量追溯报告和处置建议：隔离同批次产品，调整工艺参数',
-      output: '建议隔离800pcs产品，调整涂布参数后复测CPK'
-    },
-  ],
+interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; bg: string; label: string }> = {
+  intent:     { color: '#7C3AED', bg: '#F3E8FF', label: '意图' },
+  ontology:   { color: '#2563EB', bg: '#DBEAFE', label: '本体' },
+  data:       { color: '#0891B2', bg: '#CFFAFE', label: '数据' },
+  skill:      { color: '#D97706', bg: '#FEF3C7', label: '技能' },
+  constraint: { color: '#DC2626', bg: '#FEE2E2', label: '约束' },
+  simulation: { color: '#4F46E5', bg: '#E0E7FF', label: '推演' },
+  result:     { color: '#059669', bg: '#D1FAE5', label: '结果' },
+};
+
+// Agent a1: 产销匹配推演Agent
+const AGENT_A1_NODES: GraphNode[] = [
+  // Layer 0: Intent (top center)
+  { id: 'a1-intent', label: '产销匹配意图', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"Q3产能瓶颈应对"意图，提取时间维度、约束条件、决策目标', output: '意图: 产能优化 | 时间: Q3 | 约束: 准时交付>95%', icon: 'brain', details: ['用户输入文本'] },
+
+  // Layer 1: Ontologies (spread left/right)
+  { id: 'a1-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 120, y: 120, width: 120, height: 40, description: '产线本体：产能、状态、OEE、节拍等属性', icon: 'database', details: ['产能: 1200pcs/day', 'OEE: 85%', '状态: 运行中'] },
+  { id: 'a1-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 280, y: 110, width: 110, height: 40, description: '工单本体：工序、数量、优先级、交期', icon: 'database', details: ['工单数: 47', '优先级: 高', '交期: 2024-08-15'] },
+  { id: 'a1-onto-equip', label: 'Equipment', type: 'ontology', x: 430, y: 115, width: 100, height: 40, description: '设备本体：设备编号、类型、健康度', icon: 'database', details: ['设备数: 28', '健康度: 92%', '维保状态: 正常'] },
+  { id: 'a1-onto-material', label: 'Material', type: 'ontology', x: 570, y: 110, width: 100, height: 40, description: '物料本体：库存量、采购周期、供应商', icon: 'database', details: ['库存: 5000pcs', '采购周期: 7天', '供应商: 12家'] },
+  { id: 'a1-onto-sales', label: 'SalesOrder', type: 'ontology', x: 700, y: 120, width: 110, height: 40, description: '销售订单本体：客户、数量、交期、优先级', icon: 'database', details: ['订单数: 23', '客户: A类', '交付窗口: Q3'] },
+
+  // Layer 2: Data sources
+  { id: 'a1-data-mes', label: 'MES', type: 'data', x: 180, y: 200, width: 80, height: 40, description: '制造执行系统实时数据', icon: 'arrow', details: ['产线实时状态', '工单进度', '质量数据'] },
+  { id: 'a1-data-erp', label: 'ERP', type: 'data', x: 320, y: 195, width: 80, height: 40, description: '企业资源计划系统数据', icon: 'arrow', details: ['销售订单', '物料库存', '财务数据'] },
+  { id: 'a1-data-scada', label: 'SCADA', type: 'data', x: 480, y: 200, width: 90, height: 40, description: '数据采集与监控系统', icon: 'arrow', details: ['设备遥测', '温度/压力', '能耗数据'] },
+
+  // Layer 3: Skills (middle)
+  { id: 'a1-skill-capacity', label: 'capacity_planning', type: 'skill', x: 140, y: 290, width: 140, height: 40, description: '产能规划技能：计算各产线产能利用率', icon: 'wrench', details: ['瓶颈分析', '产能平衡', '负载预测'] },
+  { id: 'a1-skill-scheduling', label: 'production_scheduling', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '生产排程优化技能：智能排产算法', icon: 'wrench', details: ['遗传算法', '约束满足', '多目标优化'] },
+  { id: 'a1-skill-oee', label: 'oee_optimizer', type: 'skill', x: 540, y: 290, width: 130, height: 40, description: 'OEE优化技能：设备综合效率提升', icon: 'wrench', details: ['停机分析', '速度损失', '质量损失'] },
+
+  // Layer 4: Constraints
+  { id: 'a1-constraint-capacity', label: '产能利用率>96%', type: 'constraint', x: 200, y: 370, width: 140, height: 40, description: '硬约束：产能利用率必须大于96%', icon: 'shield', details: ['当前: 78%', '缺口: 18%', '优先级: P0'] },
+  { id: 'a1-constraint-delivery', label: '准时交付率>95%', type: 'constraint', x: 400, y: 375, width: 140, height: 40, description: '硬约束：订单准时交付率必须大于95%', icon: 'shield', details: ['当前: 89%', '缺口: 6%', '优先级: P0'] },
+  { id: 'a1-constraint-cost', label: '成本最优', type: 'constraint', x: 580, y: 370, width: 100, height: 40, description: '软约束：在满足硬约束前提下成本最优', icon: 'shield', details: ['加班成本', '调线成本', '外包成本'] },
+
+  // Layer 5: Simulation
+  { id: 'a1-sim-des', label: '离散事件仿真', type: 'simulation', x: 320, y: 460, width: 160, height: 48, description: 'DES仿真引擎：生成多套方案并预测KPI', output: '加班: 成本+8% 准交+3% | 调线: 成本+2% 准交+1%', icon: 'play', details: ['方案数: 3', '仿真时长: 30天', '置信度: 91%'] },
+
+  // Layer 6: Result (bottom center)
+  { id: 'a1-result', label: '最优方案', type: 'result', x: 330, y: 550, width: 140, height: 48, description: '推荐调线方案：成本最低且满足交付约束', output: '推荐调线方案：成本最低且满足交付约束，置信度91%', icon: 'file', details: ['成本增加: +2%', '准交率: 96.5%', '执行周期: 3天'] },
+];
+
+const AGENT_A1_EDGES: GraphEdge[] = [
+  // Intent -> Ontologies
+  { id: 'e1', source: 'a1-intent', target: 'a1-onto-prodline' },
+  { id: 'e2', source: 'a1-intent', target: 'a1-onto-workorder' },
+  { id: 'e3', source: 'a1-intent', target: 'a1-onto-equip' },
+  { id: 'e4', source: 'a1-intent', target: 'a1-onto-material' },
+  { id: 'e5', source: 'a1-intent', target: 'a1-onto-sales' },
+  // Ontologies -> Data
+  { id: 'e6', source: 'a1-onto-prodline', target: 'a1-data-mes' },
+  { id: 'e7', source: 'a1-onto-workorder', target: 'a1-data-mes' },
+  { id: 'e8', source: 'a1-onto-equip', target: 'a1-data-scada' },
+  { id: 'e9', source: 'a1-onto-material', target: 'a1-data-erp' },
+  { id: 'e10', source: 'a1-onto-sales', target: 'a1-data-erp' },
+  // Data -> Skills
+  { id: 'e11', source: 'a1-data-mes', target: 'a1-skill-capacity' },
+  { id: 'e12', source: 'a1-data-erp', target: 'a1-skill-scheduling' },
+  { id: 'e13', source: 'a1-data-scada', target: 'a1-skill-oee' },
+  // Skills -> Constraints
+  { id: 'e14', source: 'a1-skill-capacity', target: 'a1-constraint-capacity' },
+  { id: 'e15', source: 'a1-skill-scheduling', target: 'a1-constraint-delivery' },
+  { id: 'e16', source: 'a1-skill-oee', target: 'a1-constraint-cost' },
+  // Constraints -> Simulation
+  { id: 'e17', source: 'a1-constraint-capacity', target: 'a1-sim-des' },
+  { id: 'e18', source: 'a1-constraint-delivery', target: 'a1-sim-des' },
+  { id: 'e19', source: 'a1-constraint-cost', target: 'a1-sim-des' },
+  // Simulation -> Result
+  { id: 'e20', source: 'a1-sim-des', target: 'a1-result' },
+];
+
+// Agent a2: 设备异常诊断Agent
+const AGENT_A2_NODES: GraphNode[] = [
+  { id: 'a2-intent', label: '设备异常诊断', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"产线设备异常诊断"意图，识别异常类型、设备编号', output: '意图: 异常诊断 | 设备: L3-涂布机-02 | 类型: 温度异常', icon: 'brain', details: ['用户输入文本'] },
+
+  { id: 'a2-onto-equip', label: 'Equipment', type: 'ontology', x: 130, y: 120, width: 110, height: 40, description: '设备本体：设备编号、类型、健康度、维保记录', icon: 'database', details: ['设备: L3-涂布机-02', '类型: 涂布', '运行时长: 8760h'] },
+  { id: 'a2-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 290, y: 110, width: 120, height: 40, description: '产线本体：产线编号、工序、产能', icon: 'database', details: ['产线: L3', '工序: 涂布', '节拍: 120pcs/h'] },
+  { id: 'a2-onto-quality', label: 'QualityCheck', type: 'ontology', x: 450, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、标准值、实测值', icon: 'database', details: ['检测项: 温度', '标准: 80±2°C', '实测: 87.3°C'] },
+  { id: 'a2-onto-material', label: 'Material', type: 'ontology', x: 610, y: 110, width: 100, height: 40, description: '物料本体：浆料批次、供应商、入库时间', icon: 'database', details: ['浆料批次: SJ-240815', '供应商: B公司', '入库: 2024-08-10'] },
+  { id: 'a2-onto-process', label: 'Process', type: 'ontology', x: 740, y: 120, width: 100, height: 40, description: '工艺本体：工艺参数、标准配方', icon: 'database', details: ['工艺: 负极涂布', '速度: 12m/min', '厚度: 120μm'] },
+
+  { id: 'a2-data-scada', label: 'SCADA', type: 'data', x: 160, y: 200, width: 90, height: 40, description: 'SCADA实时数据流', icon: 'arrow', details: ['温度遥测', '压力数据', '振动频谱'] },
+  { id: 'a2-data-iot', label: 'IoT Sensors', type: 'data', x: 310, y: 195, width: 100, height: 40, description: 'IoT传感器数据', icon: 'arrow', details: ['温度传感器', '电流传感器', '红外热像'] },
+  { id: 'a2-data-maint', label: 'Maintenance', type: 'data', x: 470, y: 200, width: 110, height: 40, description: '设备维保历史数据库', icon: 'arrow', details: ['维保记录', '备件更换', '故障历史'] },
+
+  { id: 'a2-skill-anomaly', label: 'anomaly_detector', type: 'skill', x: 130, y: 290, width: 150, height: 40, description: '异常检测技能：基于时序数据的异常模式识别', icon: 'wrench', details: ['温度异常', '趋势分析', '阈值判断'] },
+  { id: 'a2-skill-rootcause', label: 'root_cause_analysis', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '根因分析技能：基于知识图谱的故障定位', icon: 'wrench', details: ['故障树', '关联分析', '历史匹配'] },
+  { id: 'a2-skill-predict', label: 'predictive_maintenance', type: 'skill', x: 540, y: 290, width: 170, height: 40, description: '预测性维护技能：剩余使用寿命预测', icon: 'wrench', details: ['RUL预测', '劣化趋势', '维护建议'] },
+
+  { id: 'a2-constraint-downtime', label: '停机时间<4h', type: 'constraint', x: 180, y: 375, width: 130, height: 40, description: '硬约束：设备停机维修时间必须小于4小时', icon: 'shield', details: ['当前预估: 2h', '满足约束', '优先级: P0'] },
+  { id: 'a2-constraint-cost', label: '维修成本<5万', type: 'constraint', x: 360, y: 380, width: 130, height: 40, description: '硬约束：单次维修成本必须小于5万元', icon: 'shield', details: ['当前预估: 1.2万', '满足约束', '优先级: P0'] },
+  { id: 'a2-constraint-safety', label: '安全标准', type: 'constraint', x: 530, y: 375, width: 100, height: 40, description: '硬约束：必须符合安全生产标准', icon: 'shield', details: ['温度超限', '安全停机', '人员疏散'] },
+
+  { id: 'a2-sim-impact', label: '影响仿真', type: 'simulation', x: 310, y: 465, width: 140, height: 48, description: '仿真故障对产线排程的影响', output: '预计产能损失120pcs，可通过调线弥补80%缺口', icon: 'play', details: ['产能损失: 120pcs', '调线弥补: 80%', '恢复时间: 2h'] },
+
+  { id: 'a2-result', label: '诊断报告', type: 'result', x: 310, y: 555, width: 140, height: 48, description: '输出故障诊断报告和维修建议', output: '根因: 加热管老化 | 建议: 立即更换 | 预计恢复: 2h', icon: 'file', details: ['根因: 加热管老化', '建议: 立即更换', '预计恢复: 2h'] },
+];
+
+const AGENT_A2_EDGES: GraphEdge[] = [
+  { id: 'e1', source: 'a2-intent', target: 'a2-onto-equip' },
+  { id: 'e2', source: 'a2-intent', target: 'a2-onto-prodline' },
+  { id: 'e3', source: 'a2-intent', target: 'a2-onto-quality' },
+  { id: 'e4', source: 'a2-intent', target: 'a2-onto-material' },
+  { id: 'e5', source: 'a2-intent', target: 'a2-onto-process' },
+  { id: 'e6', source: 'a2-onto-equip', target: 'a2-data-scada' },
+  { id: 'e7', source: 'a2-onto-prodline', target: 'a2-data-scada' },
+  { id: 'e8', source: 'a2-onto-quality', target: 'a2-data-iot' },
+  { id: 'e9', source: 'a2-onto-material', target: 'a2-data-maint' },
+  { id: 'e10', source: 'a2-onto-process', target: 'a2-data-iot' },
+  { id: 'e11', source: 'a2-data-scada', target: 'a2-skill-anomaly' },
+  { id: 'e12', source: 'a2-data-iot', target: 'a2-skill-rootcause' },
+  { id: 'e13', source: 'a2-data-maint', target: 'a2-skill-predict' },
+  { id: 'e14', source: 'a2-skill-anomaly', target: 'a2-constraint-downtime' },
+  { id: 'e15', source: 'a2-skill-rootcause', target: 'a2-constraint-cost' },
+  { id: 'e16', source: 'a2-skill-predict', target: 'a2-constraint-safety' },
+  { id: 'e17', source: 'a2-constraint-downtime', target: 'a2-sim-impact' },
+  { id: 'e18', source: 'a2-constraint-cost', target: 'a2-sim-impact' },
+  { id: 'e19', source: 'a2-constraint-safety', target: 'a2-sim-impact' },
+  { id: 'e20', source: 'a2-sim-impact', target: 'a2-result' },
+];
+
+// Agent a3: 质量追溯分析Agent
+const AGENT_A3_NODES: GraphNode[] = [
+  { id: 'a3-intent', label: '质量追溯分析', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"批次质量缺陷追溯"意图，识别批次号、缺陷类型', output: '意图: 质量追溯 | 批次: BT-2024-Q3-8847 | 缺陷: 容量衰减', icon: 'brain', details: ['用户输入文本'] },
+
+  { id: 'a3-onto-product', label: 'Product', type: 'ontology', x: 110, y: 120, width: 100, height: 40, description: '产品本体：产品型号、批次、规格', icon: 'database', details: ['型号: LP-280', '批次: BT-8847', '规格: 280Ah'] },
+  { id: 'a3-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 250, y: 110, width: 110, height: 40, description: '工单本体：工序流转、操作员、设备', icon: 'database', details: ['工单: WO-4521', '工序: 12道', '操作员: 张三'] },
+  { id: 'a3-onto-quality', label: 'QualityCheck', type: 'ontology', x: 400, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、CPK、不良率', icon: 'database', details: ['CPK: 1.15', '不良率: 0.8%', '检测项: 容量'] },
+  { id: 'a3-onto-material', label: 'Material', type: 'ontology', x: 560, y: 110, width: 100, height: 40, description: '物料本体：物料批次、供应商、来料检验', icon: 'database', details: ['物料批次: FM-3321', '供应商: C公司', '来料: 合格'] },
+  { id: 'a3-onto-equip', label: 'Equipment', type: 'ontology', x: 700, y: 120, width: 100, height: 40, description: '设备本体：设备编号、工序、维护记录', icon: 'database', details: ['设备: E-1205', '工序: 负极涂布', '维护: 正常'] },
+
+  { id: 'a3-data-qms', label: 'QMS', type: 'data', x: 150, y: 200, width: 80, height: 40, description: '质量管理系统数据', icon: 'arrow', details: ['检验记录', 'SPC数据', '不合格品'] },
+  { id: 'a3-data-mes', label: 'MES', type: 'data', x: 290, y: 195, width: 80, height: 40, description: '制造执行系统数据', icon: 'arrow', details: ['工序参数', '设备数据', '环境数据'] },
+  { id: 'a3-data-wms', label: 'WMS', type: 'data', x: 430, y: 200, width: 80, height: 40, description: '仓库管理系统数据', icon: 'arrow', details: ['物料批次', '入库记录', '库位信息'] },
+
+  { id: 'a3-skill-trace', label: 'traceability_query', type: 'skill', x: 140, y: 290, width: 150, height: 40, description: '追溯查询技能：跨工序正向/反向追溯', icon: 'wrench', details: ['正向追溯', '反向追溯', '树状展开'] },
+  { id: 'a3-skill-correlation', label: 'correlation_analyzer', type: 'skill', x: 350, y: 285, width: 170, height: 40, description: '关联分析技能：缺陷与工艺参数关联', icon: 'wrench', details: ['相关性分析', '回归模型', '显著性检验'] },
+  { id: 'a3-skill-spc', label: 'spc_analysis', type: 'skill', x: 570, y: 290, width: 130, height: 40, description: 'SPC统计过程控制分析', icon: 'wrench', details: ['控制图', '过程能力', '异常模式'] },
+
+  { id: 'a3-constraint-cpk', label: 'CPK>1.33', type: 'constraint', x: 170, y: 375, width: 110, height: 40, description: '硬约束：过程能力指数必须大于1.33', icon: 'shield', details: ['当前: 1.15', '不满足', '触发预警'] },
+  { id: 'a3-constraint-defect', label: '不良率<0.5%', type: 'constraint', x: 330, y: 380, width: 120, height: 40, description: '硬约束：不良率必须小于0.5%', icon: 'shield', details: ['当前: 0.8%', '不满足', '触发预警'] },
+  { id: 'a3-constraint-trace', label: '追溯完整度100%', type: 'constraint', x: 500, y: 375, width: 140, height: 40, description: '硬约束：质量追溯数据完整度100%', icon: 'shield', details: ['当前: 100%', '满足', '优先级: P0'] },
+
+  { id: 'a3-sim-impact', label: '影响范围分析', type: 'simulation', x: 300, y: 465, width: 160, height: 48, description: '分析缺陷影响范围：同批次、同供应商、同设备', output: '影响范围：同批次200pcs + 同供应商3批次共600pcs', icon: 'play', details: ['同批次: 200pcs', '同供应商: 600pcs', '同设备: 1500pcs'] },
+
+  { id: 'a3-result', label: '追溯报告', type: 'result', x: 310, y: 555, width: 140, height: 48, description: '输出质量追溯报告和处置建议', output: '建议隔离800pcs产品，调整涂布参数后复测CPK', icon: 'file', details: ['隔离: 800pcs', '调整: 涂布参数', '复测: CPK'] },
+];
+
+const AGENT_A3_EDGES: GraphEdge[] = [
+  { id: 'e1', source: 'a3-intent', target: 'a3-onto-product' },
+  { id: 'e2', source: 'a3-intent', target: 'a3-onto-workorder' },
+  { id: 'e3', source: 'a3-intent', target: 'a3-onto-quality' },
+  { id: 'e4', source: 'a3-intent', target: 'a3-onto-material' },
+  { id: 'e5', source: 'a3-intent', target: 'a3-onto-equip' },
+  { id: 'e6', source: 'a3-onto-product', target: 'a3-data-qms' },
+  { id: 'e7', source: 'a3-onto-workorder', target: 'a3-data-mes' },
+  { id: 'e8', source: 'a3-onto-quality', target: 'a3-data-qms' },
+  { id: 'e9', source: 'a3-onto-material', target: 'a3-data-wms' },
+  { id: 'e10', source: 'a3-onto-equip', target: 'a3-data-mes' },
+  { id: 'e11', source: 'a3-data-qms', target: 'a3-skill-trace' },
+  { id: 'e12', source: 'a3-data-mes', target: 'a3-skill-correlation' },
+  { id: 'e13', source: 'a3-data-wms', target: 'a3-skill-spc' },
+  { id: 'e14', source: 'a3-skill-trace', target: 'a3-constraint-cpk' },
+  { id: 'e15', source: 'a3-skill-correlation', target: 'a3-constraint-defect' },
+  { id: 'e16', source: 'a3-skill-spc', target: 'a3-constraint-trace' },
+  { id: 'e17', source: 'a3-constraint-cpk', target: 'a3-sim-impact' },
+  { id: 'e18', source: 'a3-constraint-defect', target: 'a3-sim-impact' },
+  { id: 'e19', source: 'a3-constraint-trace', target: 'a3-sim-impact' },
+  { id: 'e20', source: 'a3-sim-impact', target: 'a3-result' },
+];
+
+const AGENT_GRAPHS: Record<string, { nodes: GraphNode[]; edges: GraphEdge[] }> = {
+  a1: { nodes: AGENT_A1_NODES, edges: AGENT_A1_EDGES },
+  a2: { nodes: AGENT_A2_NODES, edges: AGENT_A2_EDGES },
+  a3: { nodes: AGENT_A3_NODES, edges: AGENT_A3_EDGES },
 };
 
 const B_ICON_MAP: Record<string, any> = {
@@ -1096,127 +1142,435 @@ const B_ICON_MAP: Record<string, any> = {
   wrench: Wrench, shield: ShieldCheck, play: MonitorPlay, file: FileOutput,
 };
 
-const B_NODE_COLORS: Record<string, string> = {
-  brain: '#4F46E5', database: '#0891B2', arrow: '#059669',
-  wrench: '#D97706', shield: '#DC2626', play: '#7C3AED', file: '#374151',
-};
+// Draw different node shapes based on type
+function drawNodeShape(
+  ctx: CanvasRenderingContext2D,
+  type: GraphNodeType,
+  x: number, y: number,
+  w: number, h: number,
+  color: string,
+  isActive: boolean,
+  isHovered: boolean
+) {
+  const r = Math.min(w, h) * 0.2;
+  ctx.save();
+
+  // Shadow
+  ctx.shadowColor = isActive ? color + '66' : 'rgba(0,0,0,0.12)';
+  ctx.shadowBlur = isActive ? 16 : 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = isActive ? 4 : 2;
+
+  // Fill
+  ctx.fillStyle = isActive ? '#FFFFFF' : (isHovered ? '#FAFAFA' : '#FFFFFF');
+
+  // Glow for active
+  if (isActive) {
+    ctx.shadowColor = color + '99';
+    ctx.shadowBlur = 24;
+  }
+
+  ctx.beginPath();
+  switch (type) {
+    case 'ontology': // Circle
+      ctx.arc(x, y, w / 2, 0, Math.PI * 2);
+      break;
+    case 'data': // Diamond (rotated square)
+      ctx.moveTo(x, y - h / 2);
+      ctx.lineTo(x + w / 2, y);
+      ctx.lineTo(x, y + h / 2);
+      ctx.lineTo(x - w / 2, y);
+      ctx.closePath();
+      break;
+    case 'skill': // Hexagon
+      const hexR = Math.max(w, h) / 2;
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const px = x + hexR * Math.cos(angle);
+        const py = y + hexR * Math.sin(angle) * 0.6;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    default: // Rounded rect for intent, constraint, simulation, result
+      ctx.moveTo(x - w / 2 + r, y - h / 2);
+      ctx.lineTo(x + w / 2 - r, y - h / 2);
+      ctx.quadraticCurveTo(x + w / 2, y - h / 2, x + w / 2, y - h / 2 + r);
+      ctx.lineTo(x + w / 2, y + h / 2 - r);
+      ctx.quadraticCurveTo(x + w / 2, y + h / 2, x + w / 2 - r, y + h / 2);
+      ctx.lineTo(x - w / 2 + r, y + h / 2);
+      ctx.quadraticCurveTo(x - w / 2, y + h / 2, x - w / 2, y + h / 2 - r);
+      ctx.lineTo(x - w / 2, y - h / 2 + r);
+      ctx.quadraticCurveTo(x - w / 2, y - h / 2, x - w / 2 + r, y - h / 2);
+      ctx.closePath();
+      break;
+  }
+
+  ctx.fill();
+
+  // Stroke
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = isActive ? 2.5 : (isHovered ? 2 : 1.5);
+  ctx.strokeStyle = isActive ? color : (isHovered ? '#9CA3AF' : '#E5E7EB');
+  ctx.stroke();
+
+  // Extra border for constraint
+  if (type === 'constraint') {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = color + '44';
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();
+}
 
 function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [activeNodeIdx, setActiveNodeIdx] = useState(0);
-  const nodes = BATTERY_REASONING_FLOWS[activeAgentId] || BATTERY_REASONING_FLOWS.a1;
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const animationRef = React.useRef<number>(0);
+  const dashOffsetRef = React.useRef(0);
 
+  const graph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
+  const { nodes, edges } = graph;
+
+  // Auto-play: nodes light up in sequence along the reasoning path
   useEffect(() => {
+    // Define the reasoning sequence
+    const sequence = nodes.map(n => n.id);
+    let idx = 0;
+    setActiveNodeId(sequence[0]);
     const timer = setInterval(() => {
-      setActiveNodeIdx(prev => (prev + 1) % nodes.length);
+      idx = (idx + 1) % sequence.length;
+      setActiveNodeId(sequence[idx]);
     }, 2000);
     return () => clearInterval(timer);
-  }, [nodes.length]);
+  }, [activeAgentId, nodes]);
 
-  const nodeHeight = 88;
-  const nodeGap = 32;
-  const startY = 24;
-  const svgWidth = 720;
-  const svgHeight = startY * 2 + nodes.length * nodeHeight + (nodes.length - 1) * nodeGap;
+  // Canvas rendering
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = 840;
+    const cssHeight = 640;
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    ctx.scale(dpr, dpr);
+
+    const render = () => {
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+      // Background grid
+      ctx.strokeStyle = '#F3F4F6';
+      ctx.lineWidth = 1;
+      for (let gx = 0; gx < cssWidth; gx += 40) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, cssHeight);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy < cssHeight; gy += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(cssWidth, gy);
+        ctx.stroke();
+      }
+
+      // Draw edges
+      dashOffsetRef.current -= 0.5;
+      edges.forEach(edge => {
+        const src = nodes.find(n => n.id === edge.source);
+        const tgt = nodes.find(n => n.id === edge.target);
+        if (!src || !tgt) return;
+
+        const isSourceActive = activeNodeId === src.id;
+        const isTargetActive = activeNodeId === tgt.id;
+        const isEdgeActive = isSourceActive || isTargetActive;
+
+        // Calculate connection points
+        let sx = src.x, sy = src.y, tx = tgt.x, ty = tgt.y;
+        // Adjust start/end to edge of node shapes
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Offset from node center to edge
+        const srcOffset = src.type === 'ontology' ? src.width / 2 + 2 :
+          src.type === 'data' ? Math.min(src.width, src.height) / 2 + 2 :
+            src.type === 'skill' ? Math.max(src.width, src.height) / 2 + 2 :
+              src.width / 2 + 4;
+        const tgtOffset = tgt.type === 'ontology' ? tgt.width / 2 + 6 :
+          tgt.type === 'data' ? Math.min(tgt.width, tgt.height) / 2 + 6 :
+            tgt.type === 'skill' ? Math.max(tgt.width, tgt.height) / 2 + 6 :
+              tgt.width / 2 + 8;
+
+        sx += nx * srcOffset;
+        sy += ny * srcOffset;
+        tx -= nx * tgtOffset;
+        ty -= ny * tgtOffset;
+
+        // Bezier curve
+        const midY = (sy + ty) / 2;
+        const cp1x = sx;
+        const cp1y = midY;
+        const cp2x = tx;
+        const cp2y = midY;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
+
+        // Edge styling
+        const edgeColor = isEdgeActive ? NODE_TYPE_CONFIG[src.type].color : '#D1D5DB';
+        ctx.strokeStyle = edgeColor;
+        ctx.lineWidth = isEdgeActive ? 2.5 : 1.5;
+
+        if (isEdgeActive) {
+          ctx.setLineDash([8, 6]);
+          ctx.lineDashOffset = dashOffsetRef.current;
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Arrowhead
+        const arrowLen = 10;
+        const arrowAngle = Math.atan2(ty - cp2y, tx - cp2x);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(
+          tx - arrowLen * Math.cos(arrowAngle - Math.PI / 6),
+          ty - arrowLen * Math.sin(arrowAngle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          tx - arrowLen * Math.cos(arrowAngle + Math.PI / 6),
+          ty - arrowLen * Math.sin(arrowAngle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = edgeColor;
+        ctx.fill();
+
+        ctx.restore();
+      });
+
+      // Draw nodes
+      nodes.forEach(node => {
+        const isActive = activeNodeId === node.id;
+        const isHovered = hoveredNode === node.id;
+        const config = NODE_TYPE_CONFIG[node.type];
+
+        drawNodeShape(ctx, node.type, node.x, node.y, node.width, node.height, config.color, isActive, isHovered);
+
+        // Draw icon
+        const iconSize = 14;
+        const iconX = node.x - node.width / 2 + 18;
+        const iconY = node.y - 1;
+
+        // Icon background circle
+        ctx.beginPath();
+        ctx.arc(iconX, iconY, 10, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? config.color : config.bg;
+        ctx.fill();
+
+        // Icon text (fallback since we can't render React components on canvas)
+        ctx.fillStyle = isActive ? '#FFFFFF' : config.color;
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const iconChar = node.type === 'intent' ? 'I' :
+          node.type === 'ontology' ? 'O' :
+            node.type === 'data' ? 'D' :
+              node.type === 'skill' ? 'S' :
+                node.type === 'constraint' ? 'C' :
+                  node.type === 'simulation' ? 'M' : 'R';
+        ctx.fillText(iconChar, iconX, iconY);
+
+        // Node label
+        ctx.fillStyle = isActive ? config.color : '#1F2937';
+        ctx.font = isActive ? 'bold 11px sans-serif' : '500 11px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const labelX = iconX + 16;
+        const maxLabelWidth = node.width - 40;
+        let displayLabel = node.label;
+        if (ctx.measureText(displayLabel).width > maxLabelWidth) {
+          while (ctx.measureText(displayLabel + '...').width > maxLabelWidth && displayLabel.length > 0) {
+            displayLabel = displayLabel.slice(0, -1);
+          }
+          displayLabel += '...';
+        }
+        ctx.fillText(displayLabel, labelX, node.y);
+
+        // Active pulse effect
+        if (isActive) {
+          const pulseRadius = Math.max(node.width, node.height) / 2 + 8 + Math.sin(Date.now() / 300) * 4;
+          ctx.beginPath();
+          if (node.type === 'ontology') {
+            ctx.arc(node.x, node.y, pulseRadius, 0, Math.PI * 2);
+          } else if (node.type === 'data') {
+            ctx.moveTo(node.x, node.y - pulseRadius);
+            ctx.lineTo(node.x + pulseRadius, node.y);
+            ctx.lineTo(node.x, node.y + pulseRadius);
+            ctx.lineTo(node.x - pulseRadius, node.y);
+            ctx.closePath();
+          } else {
+            const pr = 6;
+            ctx.moveTo(node.x - pulseRadius + pr, node.y - pulseRadius * 0.6);
+            ctx.lineTo(node.x + pulseRadius - pr, node.y - pulseRadius * 0.6);
+            ctx.quadraticCurveTo(node.x + pulseRadius, node.y - pulseRadius * 0.6, node.x + pulseRadius, node.y - pulseRadius * 0.6 + pr);
+            ctx.lineTo(node.x + pulseRadius, node.y + pulseRadius * 0.6 - pr);
+            ctx.quadraticCurveTo(node.x + pulseRadius, node.y + pulseRadius * 0.6, node.x + pulseRadius - pr, node.y + pulseRadius * 0.6);
+            ctx.lineTo(node.x - pulseRadius + pr, node.y + pulseRadius * 0.6);
+            ctx.quadraticCurveTo(node.x - pulseRadius, node.y + pulseRadius * 0.6, node.x - pulseRadius, node.y + pulseRadius * 0.6 - pr);
+            ctx.lineTo(node.x - pulseRadius, node.y - pulseRadius * 0.6 + pr);
+            ctx.quadraticCurveTo(node.x - pulseRadius, node.y - pulseRadius * 0.6, node.x - pulseRadius + pr, node.y - pulseRadius * 0.6);
+            ctx.closePath();
+          }
+          ctx.strokeStyle = config.color + '33';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      });
+
+      animationRef.current = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationRef.current);
+  }, [nodes, edges, activeNodeId, hoveredNode]);
+
+  // Mouse interaction
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    let found: GraphNode | null = null;
+    for (const node of nodes) {
+      const halfW = node.width / 2;
+      const halfH = node.height / 2;
+      if (node.type === 'ontology') {
+        const dist = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        if (dist <= halfW) found = node;
+      } else if (node.type === 'data') {
+        const dist = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        if (dist <= Math.min(halfW, halfH)) found = node;
+      } else {
+        if (x >= node.x - halfW && x <= node.x + halfW && y >= node.y - halfH && y <= node.y + halfH) {
+          found = node;
+        }
+      }
+      if (found) break;
+    }
+
+    if (found) {
+      setHoveredNode(found.id);
+      setTooltipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 12 });
+    } else {
+      setHoveredNode(null);
+      setTooltipPos(null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredNode(null);
+    setTooltipPos(null);
+  };
+
+  const hoveredNodeData = hoveredNode ? nodes.find(n => n.id === hoveredNode) : null;
+
+  // Stats
+  const skillCount = nodes.filter(n => n.type === 'skill').length;
+  const dataCount = nodes.filter(n => n.type === 'data').length;
+  const ontologyCount = nodes.filter(n => n.type === 'ontology').length;
+  const totalNodes = nodes.length;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GitBranch size={16} className="text-indigo-600" />
-          <span className="text-sm font-bold text-gray-900">Agent 推演流程图谱</span>
+          <span className="text-sm font-bold text-gray-900">Agent 推演知识图谱</span>
         </div>
-        <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+        <div className="flex items-center gap-3">
+          {/* Legend */}
+          <div className="flex items-center gap-2">
+            {(Object.entries(NODE_TYPE_CONFIG) as [GraphNodeType, typeof NODE_TYPE_CONFIG['intent']][]).map(([type, cfg]) => (
+              <div key={type} className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: cfg.color }} />
+                <span className="text-[10px] text-gray-500">{cfg.label}</span>
+              </div>
+            ))}
+          </div>
+          <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+        </div>
       </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-x-auto">
-        <svg width={svgWidth} height={svgHeight} className="min-w-[720px]">
-          <defs>
-            <marker id="b-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#9CA3AF" />
-            </marker>
-            <filter id="b-shadow" x="-10%" y="-10%" width="120%" height="130%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.08" />
-            </filter>
-          </defs>
+      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden relative" style={{ height: 640 }}>
+        <canvas
+          ref={canvasRef}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          style={{ width: 840, height: 640, cursor: hoveredNode ? 'pointer' : 'default' }}
+        />
 
-          {nodes.map((_, i) => {
-            if (i === nodes.length - 1) return null;
-            const y1 = startY + i * (nodeHeight + nodeGap) + nodeHeight;
-            const y2 = startY + (i + 1) * (nodeHeight + nodeGap);
-            const isActive = activeNodeIdx >= i;
-            return (
-              <line key={`line-${i}`} x1={svgWidth / 2} y1={y1} x2={svgWidth / 2} y2={y2}
-                stroke={isActive ? '#4F46E5' : '#D1D5DB'} strokeWidth={isActive ? 2.5 : 1.5}
-                markerEnd="url(#b-arrowhead)" className="transition-all duration-500" />
-            );
-          })}
-
-          {nodes.map((node, i) => {
-            const y = startY + i * (nodeHeight + nodeGap);
-            const cx = svgWidth / 2;
-            const isActive = activeNodeIdx === i;
-            const isHovered = hoveredNode === node.id;
-            const color = B_NODE_COLORS[node.icon] || '#4F46E5';
-
-            return (
-              <g key={node.id} transform={`translate(0, ${y})`}
-                onMouseEnter={() => setHoveredNode(node.id)}
-                onMouseLeave={() => setHoveredNode(null)}
-                className="cursor-pointer" style={{ transition: 'all 0.3s' }}>
-                <rect x={40} y={0} width={svgWidth - 80} height={nodeHeight} rx={10}
-                  fill={isActive ? '#FFFFFF' : '#FAFAFA'}
-                  stroke={isActive ? color : isHovered ? '#9CA3AF' : '#E5E7EB'}
-                  strokeWidth={isActive ? 2.5 : 1.5}
-                  filter="url(#b-shadow)" className="transition-all duration-300" />
-                <rect x={40} y={0} width={4} height={nodeHeight} rx={2} fill={color} className="transition-all duration-300" />
-                <circle cx={78} cy={nodeHeight / 2} r={18} fill={isActive ? color : '#F3F4F6'} className="transition-all duration-300" />
-                <circle cx={78} cy={nodeHeight / 2} r={18} fill="transparent" stroke={isActive ? color : '#D1D5DB'} strokeWidth={1.5} className="transition-all duration-300" />
-                <text x={78} y={nodeHeight / 2 + 4} textAnchor="middle" fill={isActive ? '#FFFFFF' : '#6B7280'} fontSize="11" fontWeight="bold" className="transition-all duration-300">
-                  {i + 1}
-                </text>
-                <text x={110} y={22} fill={isActive ? color : '#1F2937'} fontSize="13" fontWeight="bold" className="transition-all duration-300">
-                  {node.label}
-                </text>
-                <text x={110} y={42} fill="#6B7280" fontSize="10">
-                  {node.description.length > 55 ? node.description.slice(0, 55) + '...' : node.description}
-                </text>
-                <text x={110} y={60} fill="#4F46E5" fontSize="9" fontWeight="500">
-                  Skills: {node.skills.slice(0, 2).join(', ')}{node.skills.length > 2 ? '...' : ''}
-                </text>
-
-                {isActive && node.output && (
-                  <g>
-                    <rect x={svgWidth - 220} y={nodeHeight - 28} width={180} height={20} rx={4}
-                      fill="#ECFDF5" stroke="#10B981" strokeWidth={1} />
-                    <text x={svgWidth - 130} y={nodeHeight - 15} textAnchor="middle" fill="#059669" fontSize="8" fontWeight="500">
-                      {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
-                    </text>
-                  </g>
-                )}
-
-                {isHovered && (
-                  <g>
-                    <rect x={svgWidth - 200} y={4} width={160} height={50} rx={6}
-                      fill="#FFFFFF" stroke={color} strokeWidth={1} filter="url(#b-shadow)" />
-                    <text x={svgWidth - 190} y={18} fill="#6B7280" fontSize="8" fontWeight="bold">数据</text>
-                    <text x={svgWidth - 190} y={30} fill="#374151" fontSize="8">{node.dataSources.slice(0, 2).join(', ')}</text>
-                    <text x={svgWidth - 190} y={44} fill="#6B7280" fontSize="8" fontWeight="bold">本体</text>
-                    <text x={svgWidth - 160} y={44} fill="#374151" fontSize="8">{node.ontologies.filter(Boolean).slice(0, 3).join(', ')}</text>
-                  </g>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+        {/* Rich tooltip */}
+        {hoveredNodeData && tooltipPos && (
+          <div
+            className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-3 pointer-events-none"
+            style={{
+              left: Math.min(tooltipPos.x, 600),
+              top: Math.max(tooltipPos.y - 80, 0),
+              maxWidth: 280,
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: NODE_TYPE_CONFIG[hoveredNodeData.type].color }} />
+              <span className="text-xs font-bold text-gray-900">{hoveredNodeData.label}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: NODE_TYPE_CONFIG[hoveredNodeData.type].color }}>
+                {NODE_TYPE_CONFIG[hoveredNodeData.type].label}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">{hoveredNodeData.description}</p>
+            {hoveredNodeData.details && hoveredNodeData.details.length > 0 && (
+              <div className="space-y-1">
+                {hoveredNodeData.details.map((d, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <div className="w-1 h-1 rounded-full bg-gray-400" />
+                    <span className="text-[10px] text-gray-500">{d}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {hoveredNodeData.output && (
+              <div className="mt-2 p-1.5 bg-emerald-50 border border-emerald-200 rounded text-[10px] text-emerald-700">
+                {hoveredNodeData.output}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: '调用技能', value: `${nodes.reduce((s, n) => s + n.skills.length, 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
-          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
-          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
-          { label: '推演节点', value: `${nodes.length}步`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+          { label: '调用技能', value: `${skillCount}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '数据源', value: `${dataCount}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '本体实体', value: `${ontologyCount}个`, icon: Layers, color: 'text-blue-600 bg-blue-50' },
+          { label: '图谱节点', value: `${totalNodes}个`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
         ].map(stat => (
           <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
             <div className={`p-1.5 rounded-md ${stat.color}`}><stat.icon size={14} /></div>

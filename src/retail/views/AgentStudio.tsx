@@ -847,488 +847,612 @@ export default function AgentStudio() {
 }
 
 // ============================================================
-// 推演知识图谱组件 - 展示Agent完整推演流程
+// 推演知识图谱组件 - 展示Agent完整推演流程 (Network Graph)
 // ============================================================
 
-interface ReasoningNode {
+type NodeType = 'intent' | 'ontology' | 'data' | 'skill' | 'constraint' | 'simulation' | 'result';
+
+interface GraphNode {
   id: string;
   label: string;
-  icon: 'brain' | 'database' | 'arrow' | 'wrench' | 'shield' | 'play' | 'file';
-  skills: string[];
-  dataSources: string[];
-  ontologies: string[];
-  description: string;
+  sublabel?: string;
+  type: NodeType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  skills?: string[];
+  dataSources?: string[];
+  ontologies?: string[];
+  description?: string;
   output?: string;
 }
 
-const REASONING_FLOWS: Record<string, ReasoningNode[]> = {
-  a1: [
-    {
-      id: 'intent',
-      label: '意图解析',
-      icon: 'brain',
-      skills: ['intent_parser_v1'],
-      dataSources: ['用户输入文本'],
-      ontologies: [''],
-      description: '解析"华东区夏季选品优化"意图，提取区域范围、季节维度、优化目标',
-      output: '意图: 选品优化 | 区域: 华东 | 季节: 夏季'
-    },
-    {
-      id: 'ontology',
-      label: '本体识别',
-      icon: 'database',
-      skills: ['ontology_resolver_v1'],
-      dataSources: ['本体库'],
-      ontologies: ['Product', 'SKU', 'Category', 'SalesOrder', 'Store'],
-      description: '从本体库中识别与选品优化相关的业务实体，建立实体关联关系',
-      output: '识别5个核心本体，建立Product→Category→SalesOrder关联链'
-    },
-    {
-      id: 'binding',
-      label: '数据绑定',
-      icon: 'arrow',
-      skills: ['data_mapper_v1'],
-      dataSources: ['POS_Sales_DB', 'ERP_Store_API', 'Inventory_System'],
-      ontologies: ['Store', 'SalesOrder', 'Inventory'],
-      description: '将本体实体映射到实际数据源，参数化SQL/API查询',
-      output: '生成3个数据查询任务，覆盖华东区156家门店'
-    },
-    {
-      id: 'skill',
-      label: '技能调用',
-      icon: 'wrench',
-      skills: ['product_selection_v1', 'sales_analysis_v1', 'margin_calculation_v1'],
-      dataSources: ['POS_Sales_DB', 'Inventory_System'],
-      ontologies: ['Product', 'SKU', 'Category'],
-      description: '调用选品、销售分析、毛利计算技能，并行执行数据处理',
-      output: 'SKU级销售分析完成，筛选出TOP200候选商品'
-    },
-    {
-      id: 'constraint',
-      label: '约束注入',
-      icon: 'shield',
-      skills: ['constraint_checker_v1'],
-      dataSources: ['规则引擎'],
-      ontologies: ['Product', 'Category'],
-      description: '应用硬约束（选品通过率>85%, 毛利率>35%）和软约束（新品占比20%）',
-      output: '过滤后剩余87个SKU，全部满足约束条件'
-    },
-    {
-      id: 'simulation',
-      label: '推演计算',
-      icon: 'play',
-      skills: ['monte_carlo_v1', 'scenario_generator_v1'],
-      dataSources: ['POS_Sales_DB', 'Member_System'],
-      ontologies: ['SalesOrder', 'Member', 'Store'],
-      description: '蒙特卡洛仿真生成A/B/C三套选品方案，预测各方案的GMV、毛利率、坪效',
-      output: '方案A: GMV+12% | 方案B: GMV+8% 毛利+3% | 方案C: GMV+15% 毛利-2%'
-    },
-    {
-      id: 'result',
-      label: '结果输出',
-      icon: 'file',
-      skills: ['result_formatter_v1'],
-      dataSources: ['推演结果集'],
-      ontologies: ['Product', 'SalesOrder'],
-      description: '结构化输出最优方案（方案B），附带决策依据和可复用规则',
-      output: '推荐方案B：平衡GMV增长与毛利率，置信度87%'
-    },
-  ],
-  a2: [
-    {
-      id: 'intent',
-      label: '意图解析',
-      icon: 'brain',
-      skills: ['intent_parser_v1'],
-      dataSources: ['用户输入文本'],
-      ontologies: [''],
-      description: '解析"门店日销异常预警"意图，识别异常类型、预警级别',
-      output: '意图: 异常预警 | 类型: 日销下降 | 级别: 紧急'
-    },
-    {
-      id: 'ontology',
-      label: '本体识别',
-      icon: 'database',
-      skills: ['ontology_resolver_v1'],
-      dataSources: ['本体库'],
-      ontologies: ['Store', 'SalesOrder', 'POSTransaction', 'Member', 'Inventory'],
-      description: '识别门店运营相关本体实体，建立Store→POS→SalesOrder→Member关联',
-      output: '识别5个核心本体，构建门店运营知识图谱'
-    },
-    {
-      id: 'binding',
-      label: '数据绑定',
-      icon: 'arrow',
-      skills: ['data_mapper_v1'],
-      dataSources: ['POS_Stream', 'Member_System', 'Inventory_RealTime'],
-      ontologies: ['Store', 'SalesOrder', 'Member'],
-      description: '绑定实时POS流水、会员数据、库存数据，建立实时数据管道',
-      output: '实时数据管道建立，延迟<3秒'
-    },
-    {
-      id: 'skill',
-      label: '技能调用',
-      icon: 'wrench',
-      skills: ['store_ops_v1', 'daily_report_v1', 'exception_alert_v1'],
-      dataSources: ['POS_Stream', 'Store_Mgmt_DB'],
-      ontologies: ['Store', 'SalesOrder'],
-      description: '调用门店运营监控技能，执行日销对比、同环比分析、异常检测',
-      output: '检测到3家门店日销下降超20%'
-    },
-    {
-      id: 'constraint',
-      label: '约束注入',
-      icon: 'shield',
-      skills: ['constraint_checker_v1'],
-      dataSources: ['规则引擎'],
-      ontologies: ['Store', 'SalesOrder'],
-      description: '应用约束条件：日销目标达成率>90%，客单价>35元',
-      output: '2家门店触发硬约束，1家触发软约束'
-    },
-    {
-      id: 'simulation',
-      label: '推演计算',
-      icon: 'play',
-      skills: ['root_cause_analyzer_v1', 'attribution_model_v1'],
-      dataSources: ['POS_Stream', 'Weather_API', 'Competitor_Data'],
-      ontologies: ['Store', 'SalesOrder', 'Member'],
-      description: '多维度异常根因分析：天气因素、竞品促销、人员排班、库存缺货',
-      output: '根因: 竞品促销(45%) + 库存缺货(30%) + 天气(25%)'
-    },
-    {
-      id: 'result',
-      label: '结果输出',
-      icon: 'file',
-      skills: ['result_formatter_v1'],
-      dataSources: ['分析结果集'],
-      ontologies: ['Store', 'SalesOrder'],
-      description: '生成异常诊断报告，输出处理建议：补货+竞品应对+促销方案',
-      output: '3项处理建议，预计2日内恢复日销目标'
-    },
-  ],
-  a3: [
-    {
-      id: 'intent',
-      label: '意图解析',
-      icon: 'brain',
-      skills: ['intent_parser_v1'],
-      dataSources: ['用户输入文本'],
-      ontologies: [''],
-      description: '解析"高价值会员流失预警"意图，识别会员分层标准、流失定义',
-      output: '意图: 流失预警 | 分层: 高价值 | 流失定义: 30天未消费'
-    },
-    {
-      id: 'ontology',
-      label: '本体识别',
-      icon: 'database',
-      skills: ['ontology_resolver_v1'],
-      dataSources: ['本体库'],
-      ontologies: ['Member', 'Promotion', 'Coupon', 'SalesOrder', 'LoyaltyProgram'],
-      description: '识别会员运营相关本体，建立Member→SalesOrder→Promotion关联链',
-      output: '识别5个核心本体，构建会员洞察知识图谱'
-    },
-    {
-      id: 'binding',
-      label: '数据绑定',
-      icon: 'arrow',
-      skills: ['data_mapper_v1'],
-      dataSources: ['Member_System', 'CRM_DB', 'Sales_History'],
-      ontologies: ['Member', 'SalesOrder'],
-      description: '绑定会员画像、消费历史、互动记录，构建360°会员视图',
-      output: '覆盖全量会员数据，共计2.3M会员档案'
-    },
-    {
-      id: 'skill',
-      label: '技能调用',
-      icon: 'wrench',
-      skills: ['member_segmentation_v1', 'churn_prediction_v1'],
-      dataSources: ['Member_System', 'Sales_History'],
-      ontologies: ['Member', 'SalesOrder'],
-      description: '调用会员分群和流失预测技能，RFM分群+XGBoost预测模型',
-      output: 'RFM分群完成，识别高价值会员12,400人'
-    },
-    {
-      id: 'constraint',
-      label: '约束注入',
-      icon: 'shield',
-      skills: ['constraint_checker_v1'],
-      dataSources: ['规则引擎'],
-      ontologies: ['Member', 'LoyaltyProgram'],
-      description: '应用约束：会员增长率>10%，复购率>35%，LTV>2000元',
-      output: '流失风险会员中，需优先干预8,600人'
-    },
-    {
-      id: 'simulation',
-      label: '推演计算',
-      icon: 'play',
-      skills: ['scenario_generator_v1', 'campaign_optimizer_v1'],
-      dataSources: ['Member_System', 'Promotion_DB'],
-      ontologies: ['Member', 'Promotion', 'Coupon'],
-      description: '仿真不同挽回策略效果：专属优惠券、生日礼、积分翻倍、到店礼遇',
-      output: '策略A(专属券): 挽回率32% | 策略B(到店礼): 挽回率28%'
-    },
-    {
-      id: 'result',
-      label: '结果输出',
-      icon: 'file',
-      skills: ['result_formatter_v1'],
-      dataSources: ['推演结果集'],
-      ontologies: ['Member', 'Promotion'],
-      description: '输出流失风险名单和精准营销方案，附带ROI预测和触达渠道建议',
-      output: '推荐策略A，预计挽回2,752人，ROI 1:4.3'
-    },
-  ],
+interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+const NODE_TYPE_CONFIG: Record<NodeType, { color: string; bg: string; border: string; glow: string; shape: string }> = {
+  intent:    { color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', glow: 'rgba(124,58,237,0.35)', shape: 'roundRect' },
+  ontology:  { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', glow: 'rgba(37,99,235,0.35)', shape: 'circle' },
+  data:      { color: '#0891B2', bg: '#ECFEFF', border: '#A5F3FC', glow: 'rgba(8,145,178,0.35)', shape: 'diamond' },
+  skill:     { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', glow: 'rgba(217,119,6,0.35)', shape: 'roundRect' },
+  constraint:{ color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', glow: 'rgba(220,38,38,0.35)', shape: 'roundRect' },
+  simulation:{ color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE', glow: 'rgba(79,70,229,0.35)', shape: 'roundRect' },
+  result:    { color: '#059669', bg: '#ECFDF5', border: '#A7F3D0', glow: 'rgba(5,150,105,0.35)', shape: 'roundRect' },
 };
 
-const ICON_MAP: Record<string, any> = {
-  brain: BrainCircuit,
-  database: Database,
-  arrow: ArrowRight,
-  wrench: Wrench,
-  shield: ShieldCheck,
-  play: MonitorPlay,
-  file: FileOutput,
+const TYPE_ICON: Record<NodeType, any> = {
+  intent: BrainCircuit,
+  ontology: Database,
+  data: ArrowRight,
+  skill: Wrench,
+  constraint: ShieldCheck,
+  simulation: MonitorPlay,
+  result: CheckCircle2,
 };
 
-const NODE_COLORS: Record<string, string> = {
-  brain: '#4F46E5',
-  database: '#0891B2',
-  arrow: '#059669',
-  wrench: '#D97706',
-  shield: '#DC2626',
-  play: '#7C3AED',
-  file: '#374151',
-};
+function buildAgentGraph(agentId: string): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const configs: Record<string, { nodes: GraphNode[]; edges: GraphEdge[] }> = {
+    a1: {
+      nodes: [
+        { id: 'intent', label: '意图解析', sublabel: '选品优化 · 华东区 · 夏季', type: 'intent', x: 400, y: 40, width: 140, height: 48, skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [], description: '解析"华东区夏季选品优化"意图，提取区域范围、季节维度、优化目标', output: '意图: 选品优化 | 区域: 华东 | 季节: 夏季' },
+        { id: 'onto_product', label: 'Product', sublabel: '商品本体', type: 'ontology', x: 160, y: 140, width: 100, height: 44, ontologies: ['Product'], description: '商品基础信息本体' },
+        { id: 'onto_sku', label: 'SKU', sublabel: '库存单元', type: 'ontology', x: 300, y: 150, width: 90, height: 44, ontologies: ['SKU'], description: 'SKU级库存单元本体' },
+        { id: 'onto_category', label: 'Category', sublabel: '品类', type: 'ontology', x: 440, y: 150, width: 100, height: 44, ontologies: ['Category'], description: '商品品类层级本体' },
+        { id: 'onto_store', label: 'Store', sublabel: '门店', type: 'ontology', x: 580, y: 140, width: 90, height: 44, ontologies: ['Store'], description: '门店信息本体' },
+        { id: 'data_pos', label: 'POS销售', sublabel: 'POS_Sales_DB', type: 'data', x: 140, y: 240, width: 100, height: 44, dataSources: ['POS_Sales_DB'], description: 'POS交易流水数据' },
+        { id: 'data_inventory', label: '库存', sublabel: 'Inventory_System', type: 'data', x: 280, y: 250, width: 100, height: 44, dataSources: ['Inventory_System'], description: '实时库存数据' },
+        { id: 'data_erp', label: 'ERP', sublabel: 'ERP_Store_API', type: 'data', x: 420, y: 250, width: 90, height: 44, dataSources: ['ERP_Store_API'], description: 'ERP门店数据' },
+        { id: 'data_member', label: '会员', sublabel: 'Member_System', type: 'data', x: 560, y: 240, width: 90, height: 44, dataSources: ['Member_System'], description: '会员消费数据' },
+        { id: 'skill_select', label: '智能选品', sublabel: 'product_selection', type: 'skill', x: 180, y: 340, width: 110, height: 44, skills: ['product_selection_v1'], description: '基于多维度数据的智能选品算法' },
+        { id: 'skill_sales', label: '销售分析', sublabel: 'sales_analysis', type: 'skill', x: 340, y: 350, width: 110, height: 44, skills: ['sales_analysis_v1'], description: '销售趋势与同环比分析' },
+        { id: 'skill_margin', label: '毛利计算', sublabel: 'margin_calculation', type: 'skill', x: 500, y: 340, width: 110, height: 44, skills: ['margin_calculation_v1'], description: 'SKU级毛利率测算' },
+        { id: 'con_pass', label: '选品率', sublabel: '>85%', type: 'constraint', x: 200, y: 440, width: 100, height: 44, description: '选品通过率硬约束' },
+        { id: 'con_margin', label: '毛利率', sublabel: '>35%', type: 'constraint', x: 350, y: 450, width: 100, height: 44, description: '毛利率硬约束' },
+        { id: 'con_new', label: '新品占比', sublabel: '~20%', type: 'constraint', x: 500, y: 440, width: 100, height: 44, description: '新品占比软约束' },
+        { id: 'sim_mc', label: '蒙特卡洛仿真', sublabel: 'A/B/C方案', type: 'simulation', x: 350, y: 530, width: 140, height: 52, skills: ['monte_carlo_v1', 'scenario_generator_v1'], description: '蒙特卡洛仿真生成多套选品方案', output: '方案A: GMV+12% | 方案B: GMV+8% 毛利+3% | 方案C: GMV+15% 毛利-2%' },
+        { id: 'result', label: '最优方案', sublabel: '方案B · 置信度87%', type: 'result', x: 400, y: 630, width: 140, height: 52, description: '结构化输出最优方案，附带决策依据', output: '推荐方案B：平衡GMV增长与毛利率，置信度87%' },
+      ],
+      edges: [
+        { id: 'e1', source: 'intent', target: 'onto_product', label: '解析' },
+        { id: 'e2', source: 'intent', target: 'onto_sku', label: '解析' },
+        { id: 'e3', source: 'intent', target: 'onto_category', label: '解析' },
+        { id: 'e4', source: 'intent', target: 'onto_store', label: '解析' },
+        { id: 'e5', source: 'onto_product', target: 'data_pos', label: '绑定' },
+        { id: 'e6', source: 'onto_sku', target: 'data_inventory', label: '绑定' },
+        { id: 'e7', source: 'onto_category', target: 'data_erp', label: '绑定' },
+        { id: 'e8', source: 'onto_store', target: 'data_member', label: '绑定' },
+        { id: 'e9', source: 'data_pos', target: 'skill_select', label: '输入' },
+        { id: 'e10', source: 'data_inventory', target: 'skill_sales', label: '输入' },
+        { id: 'e11', source: 'data_erp', target: 'skill_margin', label: '输入' },
+        { id: 'e12', source: 'skill_select', target: 'con_pass', label: '校验' },
+        { id: 'e13', source: 'skill_sales', target: 'con_margin', label: '校验' },
+        { id: 'e14', source: 'skill_margin', target: 'con_new', label: '校验' },
+        { id: 'e15', source: 'con_pass', target: 'sim_mc', label: '推演' },
+        { id: 'e16', source: 'con_margin', target: 'sim_mc', label: '推演' },
+        { id: 'e17', source: 'con_new', target: 'sim_mc', label: '推演' },
+        { id: 'e18', source: 'sim_mc', target: 'result', label: '输出' },
+      ]
+    },
+    a2: {
+      nodes: [
+        { id: 'intent', label: '意图解析', sublabel: '日销异常预警 · 紧急', type: 'intent', x: 400, y: 40, width: 150, height: 48, skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [], description: '解析"门店日销异常预警"意图，识别异常类型、预警级别', output: '意图: 异常预警 | 类型: 日销下降 | 级别: 紧急' },
+        { id: 'onto_store', label: 'Store', sublabel: '门店', type: 'ontology', x: 140, y: 140, width: 90, height: 44, ontologies: ['Store'], description: '门店信息本体' },
+        { id: 'onto_pos', label: 'POS', sublabel: '交易', type: 'ontology', x: 260, y: 150, width: 80, height: 44, ontologies: ['POSTransaction'], description: 'POS交易本体' },
+        { id: 'onto_sales', label: 'SalesOrder', sublabel: '销售订单', type: 'ontology', x: 380, y: 150, width: 110, height: 44, ontologies: ['SalesOrder'], description: '销售订单本体' },
+        { id: 'onto_member', label: 'Member', sublabel: '会员', type: 'ontology', x: 520, y: 150, width: 90, height: 44, ontologies: ['Member'], description: '会员本体' },
+        { id: 'onto_inventory', label: 'Inventory', sublabel: '库存', type: 'ontology', x: 640, y: 140, width: 100, height: 44, ontologies: ['Inventory'], description: '库存本体' },
+        { id: 'data_pos', label: 'POS流水', sublabel: 'POS_Stream', type: 'data', x: 130, y: 240, width: 100, height: 44, dataSources: ['POS_Stream'], description: '实时POS流水数据' },
+        { id: 'data_member', label: '会员系统', sublabel: 'Member_System', type: 'data', x: 270, y: 250, width: 110, height: 44, dataSources: ['Member_System'], description: '会员实时数据' },
+        { id: 'data_inv', label: '库存实时', sublabel: 'Inventory_RealTime', type: 'data', x: 410, y: 250, width: 110, height: 44, dataSources: ['Inventory_RealTime'], description: '实时库存数据' },
+        { id: 'data_store', label: '门店管理', sublabel: 'Store_Mgmt_DB', type: 'data', x: 550, y: 250, width: 110, height: 44, dataSources: ['Store_Mgmt_DB'], description: '门店管理数据库' },
+        { id: 'skill_ops', label: '门店运营', sublabel: 'store_ops', type: 'skill', x: 180, y: 340, width: 110, height: 44, skills: ['store_ops_v1'], description: '门店运营监控技能' },
+        { id: 'skill_report', label: '日报生成', sublabel: 'daily_report', type: 'skill', x: 340, y: 350, width: 110, height: 44, skills: ['daily_report_v1'], description: '自动生成运营日报' },
+        { id: 'skill_alert', label: '异常预警', sublabel: 'exception_alert', type: 'skill', x: 500, y: 340, width: 110, height: 44, skills: ['exception_alert_v1'], description: '异常检测与预警' },
+        { id: 'con_target', label: '日销目标', sublabel: '>90%', type: 'constraint', x: 200, y: 440, width: 100, height: 44, description: '日销目标达成率硬约束' },
+        { id: 'con_atv', label: '客单价', sublabel: '>35元', type: 'constraint', x: 350, y: 450, width: 90, height: 44, description: '客单价硬约束' },
+        { id: 'con_member', label: '会员转化', sublabel: '>25%', type: 'constraint', x: 490, y: 440, width: 100, height: 44, description: '会员转化率软约束' },
+        { id: 'sim_rca', label: '根因分析', sublabel: '多维度归因', type: 'simulation', x: 350, y: 530, width: 140, height: 52, skills: ['root_cause_analyzer_v1', 'attribution_model_v1'], description: '多维度异常根因分析', output: '根因: 竞品促销(45%) + 库存缺货(30%) + 天气(25%)' },
+        { id: 'result', label: '诊断报告', sublabel: '3项处理建议', type: 'result', x: 400, y: 630, width: 140, height: 52, description: '生成异常诊断报告和处理建议', output: '3项处理建议，预计2日内恢复日销目标' },
+      ],
+      edges: [
+        { id: 'e1', source: 'intent', target: 'onto_store', label: '解析' },
+        { id: 'e2', source: 'intent', target: 'onto_pos', label: '解析' },
+        { id: 'e3', source: 'intent', target: 'onto_sales', label: '解析' },
+        { id: 'e4', source: 'intent', target: 'onto_member', label: '解析' },
+        { id: 'e5', source: 'intent', target: 'onto_inventory', label: '解析' },
+        { id: 'e6', source: 'onto_store', target: 'data_pos', label: '绑定' },
+        { id: 'e7', source: 'onto_pos', target: 'data_member', label: '绑定' },
+        { id: 'e8', source: 'onto_sales', target: 'data_inv', label: '绑定' },
+        { id: 'e9', source: 'onto_member', target: 'data_store', label: '绑定' },
+        { id: 'e10', source: 'data_pos', target: 'skill_ops', label: '输入' },
+        { id: 'e11', source: 'data_member', target: 'skill_report', label: '输入' },
+        { id: 'e12', source: 'data_inv', target: 'skill_alert', label: '输入' },
+        { id: 'e13', source: 'skill_ops', target: 'con_target', label: '校验' },
+        { id: 'e14', source: 'skill_report', target: 'con_atv', label: '校验' },
+        { id: 'e15', source: 'skill_alert', target: 'con_member', label: '校验' },
+        { id: 'e16', source: 'con_target', target: 'sim_rca', label: '推演' },
+        { id: 'e17', source: 'con_atv', target: 'sim_rca', label: '推演' },
+        { id: 'e18', source: 'con_member', target: 'sim_rca', label: '推演' },
+        { id: 'e19', source: 'sim_rca', target: 'result', label: '输出' },
+      ]
+    },
+    a3: {
+      nodes: [
+        { id: 'intent', label: '意图解析', sublabel: '高价值会员流失预警', type: 'intent', x: 400, y: 40, width: 160, height: 48, skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [], description: '解析"高价值会员流失预警"意图，识别会员分层标准、流失定义', output: '意图: 流失预警 | 分层: 高价值 | 流失定义: 30天未消费' },
+        { id: 'onto_member', label: 'Member', sublabel: '会员', type: 'ontology', x: 140, y: 140, width: 90, height: 44, ontologies: ['Member'], description: '会员本体' },
+        { id: 'onto_promo', label: 'Promotion', sublabel: '促销', type: 'ontology', x: 260, y: 150, width: 100, height: 44, ontologies: ['Promotion'], description: '促销活动本体' },
+        { id: 'onto_coupon', label: 'Coupon', sublabel: '优惠券', type: 'ontology', x: 390, y: 150, width: 100, height: 44, ontologies: ['Coupon'], description: '优惠券本体' },
+        { id: 'onto_sales', label: 'SalesOrder', sublabel: '销售订单', type: 'ontology', x: 520, y: 150, width: 110, height: 44, ontologies: ['SalesOrder'], description: '销售订单本体' },
+        { id: 'onto_loyalty', label: 'Loyalty', sublabel: '忠诚度', type: 'ontology', x: 650, y: 140, width: 100, height: 44, ontologies: ['LoyaltyProgram'], description: '忠诚度计划本体' },
+        { id: 'data_member', label: '会员系统', sublabel: 'Member_System', type: 'data', x: 130, y: 240, width: 110, height: 44, dataSources: ['Member_System'], description: '会员主数据' },
+        { id: 'data_crm', label: 'CRM', sublabel: 'CRM_DB', type: 'data', x: 280, y: 250, width: 90, height: 44, dataSources: ['CRM_DB'], description: 'CRM客户关系数据' },
+        { id: 'data_sales', label: '消费历史', sublabel: 'Sales_History', type: 'data', x: 410, y: 250, width: 110, height: 44, dataSources: ['Sales_History'], description: '历史消费记录' },
+        { id: 'data_promo', label: '促销库', sublabel: 'Promotion_DB', type: 'data', x: 550, y: 250, width: 100, height: 44, dataSources: ['Promotion_DB'], description: '促销活动历史数据' },
+        { id: 'skill_segment', label: '会员分群', sublabel: 'RFM分群', type: 'skill', x: 190, y: 340, width: 110, height: 44, skills: ['member_segmentation_v1'], description: 'RFM会员价值分群' },
+        { id: 'skill_churn', label: '流失预测', sublabel: 'XGBoost模型', type: 'skill', x: 360, y: 350, width: 110, height: 44, skills: ['churn_prediction_v1'], description: 'XGBoost流失预测模型' },
+        { id: 'skill_campaign', label: '营销优化', sublabel: 'campaign_optimizer', type: 'skill', x: 520, y: 340, width: 110, height: 44, skills: ['campaign_optimizer_v1'], description: '营销活动效果优化' },
+        { id: 'con_growth', label: '会员增长', sublabel: '>10%', type: 'constraint', x: 200, y: 440, width: 100, height: 44, description: '会员增长率硬约束' },
+        { id: 'con_repurchase', label: '复购率', sublabel: '>35%', type: 'constraint', x: 350, y: 450, width: 90, height: 44, description: '复购率硬约束' },
+        { id: 'con_ltv', label: 'LTV', sublabel: '>2000元', type: 'constraint', x: 490, y: 440, width: 90, height: 44, description: 'LTV硬约束' },
+        { id: 'sim_scenario', label: '策略仿真', sublabel: '挽回策略A/B', type: 'simulation', x: 350, y: 530, width: 140, height: 52, skills: ['scenario_generator_v1', 'campaign_optimizer_v1'], description: '仿真不同挽回策略效果', output: '策略A(专属券): 挽回率32% | 策略B(到店礼): 挽回率28%' },
+        { id: 'result', label: '营销方案', sublabel: '策略A · ROI 1:4.3', type: 'result', x: 400, y: 630, width: 150, height: 52, description: '输出流失风险名单和精准营销方案', output: '推荐策略A，预计挽回2,752人，ROI 1:4.3' },
+      ],
+      edges: [
+        { id: 'e1', source: 'intent', target: 'onto_member', label: '解析' },
+        { id: 'e2', source: 'intent', target: 'onto_promo', label: '解析' },
+        { id: 'e3', source: 'intent', target: 'onto_coupon', label: '解析' },
+        { id: 'e4', source: 'intent', target: 'onto_sales', label: '解析' },
+        { id: 'e5', source: 'intent', target: 'onto_loyalty', label: '解析' },
+        { id: 'e6', source: 'onto_member', target: 'data_member', label: '绑定' },
+        { id: 'e7', source: 'onto_promo', target: 'data_crm', label: '绑定' },
+        { id: 'e8', source: 'onto_coupon', target: 'data_sales', label: '绑定' },
+        { id: 'e9', source: 'onto_sales', target: 'data_promo', label: '绑定' },
+        { id: 'e10', source: 'data_member', target: 'skill_segment', label: '输入' },
+        { id: 'e11', source: 'data_crm', target: 'skill_churn', label: '输入' },
+        { id: 'e12', source: 'data_sales', target: 'skill_campaign', label: '输入' },
+        { id: 'e13', source: 'skill_segment', target: 'con_growth', label: '校验' },
+        { id: 'e14', source: 'skill_churn', target: 'con_repurchase', label: '校验' },
+        { id: 'e15', source: 'skill_campaign', target: 'con_ltv', label: '校验' },
+        { id: 'e16', source: 'con_growth', target: 'sim_scenario', label: '推演' },
+        { id: 'e17', source: 'con_repurchase', target: 'sim_scenario', label: '推演' },
+        { id: 'e18', source: 'con_ltv', target: 'sim_scenario', label: '推演' },
+        { id: 'e19', source: 'sim_scenario', target: 'result', label: '输出' },
+      ]
+    },
+  };
+  return configs[agentId] || configs.a1;
+}
 
 function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [activeNodeIdx, setActiveNodeIdx] = useState(0);
-  const nodes = REASONING_FLOWS[activeAgentId] || REASONING_FLOWS.a1;
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [autoPlay, setAutoPlay] = useState(true);
+  const svgRef = React.useRef<SVGSVGElement>(null);
 
-  // 自动播放动画
+  const graph = React.useMemo(() => buildAgentGraph(activeAgentId), [activeAgentId]);
+  const { nodes, edges } = graph;
+
+  // Build topological order for auto-play
+  const topoOrder = React.useMemo(() => {
+    const visited = new Set<string>();
+    const order: string[] = [];
+    function visit(nid: string) {
+      if (visited.has(nid)) return;
+      visited.add(nid);
+      edges.filter(e => e.source === nid).forEach(e => visit(e.target));
+      order.push(nid);
+    }
+    nodes.forEach(n => { if (!edges.some(e => e.target === n.id)) visit(n.id); });
+    return order;
+  }, [nodes, edges]);
+
+  // Auto-play: light up nodes in sequence
   React.useEffect(() => {
+    if (!autoPlay) return;
+    let idx = 0;
+    setActiveNodeId(topoOrder[0] || null);
     const timer = setInterval(() => {
-      setActiveNodeIdx(prev => (prev + 1) % nodes.length);
-    }, 2000);
+      idx = (idx + 1) % topoOrder.length;
+      setActiveNodeId(topoOrder[idx]);
+    }, 1800);
     return () => clearInterval(timer);
-  }, [nodes.length]);
+  }, [topoOrder, autoPlay, activeAgentId]);
 
-  const nodeHeight = 88;
-  const nodeGap = 32;
-  const startY = 24;
-  const svgWidth = 720;
-  const svgHeight = startY * 2 + nodes.length * nodeHeight + (nodes.length - 1) * nodeGap;
+  const svgWidth = 800;
+  const svgHeight = 720;
+  const padding = 24;
+
+  // Compute node center
+  const getCenter = (n: GraphNode) => ({ x: n.x, y: n.y + n.height / 2 });
+
+  // Bezier edge path
+  const buildEdgePath = (src: GraphNode, tgt: GraphNode) => {
+    const s = getCenter(src);
+    const t = getCenter(tgt);
+    const midY = (s.y + t.y) / 2;
+    return `M ${s.x} ${s.y} C ${s.x} ${midY}, ${t.x} ${midY}, ${t.x} ${t.y}`;
+  };
+
+  // Check if edge is active (source node is active)
+  const isEdgeActive = (edge: GraphEdge) => {
+    if (!activeNodeId) return false;
+    const activeIdx = topoOrder.indexOf(activeNodeId);
+    const srcIdx = topoOrder.indexOf(edge.source);
+    const tgtIdx = topoOrder.indexOf(edge.target);
+    return srcIdx >= 0 && tgtIdx >= 0 && activeIdx >= tgtIdx && activeIdx >= srcIdx;
+  };
+
+  const activeNode = nodes.find(n => n.id === activeNodeId);
 
   return (
     <div className="space-y-4">
-      {/* 头部信息 */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GitBranch size={16} className="text-indigo-600" />
-          <span className="text-sm font-bold text-gray-900">Agent 推演流程图谱</span>
+          <span className="text-sm font-bold text-gray-900">Agent 推演知识图谱</span>
         </div>
-        <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAutoPlay(!autoPlay)}
+            className={cn(
+              "text-[10px] px-2 py-1 rounded-full font-medium transition-colors",
+              autoPlay ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"
+            )}
+          >
+            {autoPlay ? '自动演示中' : '已暂停'}
+          </button>
+        </div>
       </div>
 
-      {/* SVG 流程图 */}
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-2">
+        {([
+          { type: 'intent', label: '意图' },
+          { type: 'ontology', label: '本体' },
+          { type: 'data', label: '数据' },
+          { type: 'skill', label: '技能' },
+          { type: 'constraint', label: '约束' },
+          { type: 'simulation', label: '推演' },
+          { type: 'result', label: '结果' },
+        ] as { type: NodeType; label: string }[]).map(item => {
+          const cfg = NODE_TYPE_CONFIG[item.type];
+          return (
+            <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.color }} />
+              <span className="text-[10px] font-medium" style={{ color: cfg.color }}>{item.label}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* SVG Network Graph */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-x-auto">
-        <svg width={svgWidth} height={svgHeight} className="min-w-[720px]">
+        <svg
+          ref={svgRef}
+          width={svgWidth}
+          height={svgHeight}
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="min-w-[800px]"
+        >
           <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            {/* Arrow marker */}
+            <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#4F46E5" />
+            </marker>
+            <marker id="arrowhead-default" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="#9CA3AF" />
             </marker>
-            <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.08" />
+            {/* Glow filter */}
+            <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
+            <filter id="shadow-sm" x="-10%" y="-10%" width="120%" height="130%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.1" />
+            </filter>
+            {/* Animated dash pattern */}
+            <style>{`
+              @keyframes flowDash {
+                to { stroke-dashoffset: -24; }
+              }
+              .edge-flowing {
+                animation: flowDash 1s linear infinite;
+              }
+              @keyframes pulseGlow {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+              }
+              .pulse-glow {
+                animation: pulseGlow 1.5s ease-in-out infinite;
+              }
+            `}</style>
           </defs>
 
-          {/* 连接线 */}
-          {nodes.map((_, i) => {
-            if (i === nodes.length - 1) return null;
-            const y1 = startY + i * (nodeHeight + nodeGap) + nodeHeight;
-            const y2 = startY + (i + 1) * (nodeHeight + nodeGap);
-            const isActive = activeNodeIdx >= i;
+          {/* Background grid */}
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#E5E7EB" strokeWidth="0.5" />
+          </pattern>
+          <rect width={svgWidth} height={svgHeight} fill="url(#grid)" />
+
+          {/* Edges */}
+          {edges.map(edge => {
+            const src = nodes.find(n => n.id === edge.source);
+            const tgt = nodes.find(n => n.id === edge.target);
+            if (!src || !tgt) return null;
+            const active = isEdgeActive(edge);
+            const path = buildEdgePath(src, tgt);
             return (
-              <line
-                key={`line-${i}`}
-                x1={svgWidth / 2}
-                y1={y1}
-                x2={svgWidth / 2}
-                y2={y2}
-                stroke={isActive ? '#4F46E5' : '#D1D5DB'}
-                strokeWidth={isActive ? 2.5 : 1.5}
-                markerEnd="url(#arrowhead)"
-                className="transition-all duration-500"
-              />
+              <g key={edge.id}>
+                {/* Background edge */}
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={active ? '#C7D2FE' : '#E5E7EB'}
+                  strokeWidth={active ? 3 : 1.5}
+                  className="transition-all duration-500"
+                />
+                {/* Flowing dash edge */}
+                {active && (
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="#4F46E5"
+                    strokeWidth={2}
+                    strokeDasharray="6 6"
+                    markerEnd="url(#arrowhead-active)"
+                    className="edge-flowing"
+                  />
+                )}
+                {!active && (
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="#9CA3AF"
+                    strokeWidth={1.5}
+                    markerEnd="url(#arrowhead-default)"
+                  />
+                )}
+                {/* Edge label */}
+                {edge.label && (
+                  <text
+                    x={(getCenter(src).x + getCenter(tgt).x) / 2}
+                    y={(getCenter(src).y + getCenter(tgt).y) / 2 - 4}
+                    textAnchor="middle"
+                    fill={active ? '#4F46E5' : '#9CA3AF'}
+                    fontSize="9"
+                    fontWeight="500"
+                    className="transition-all duration-500"
+                  >
+                    {edge.label}
+                  </text>
+                )}
+              </g>
             );
           })}
 
-          {/* 节点 */}
-          {nodes.map((node, i) => {
-            const y = startY + i * (nodeHeight + nodeGap);
-            const cx = svgWidth / 2;
-            const isActive = activeNodeIdx === i;
+          {/* Nodes */}
+          {nodes.map(node => {
+            const cfg = NODE_TYPE_CONFIG[node.type];
+            const isActive = activeNodeId === node.id;
             const isHovered = hoveredNode === node.id;
-            const color = NODE_COLORS[node.icon] || '#4F46E5';
-            const Icon = ICON_MAP[node.icon] || BrainCircuit;
+            const Icon = TYPE_ICON[node.type];
+            const cx = node.x;
+            const cy = node.y + node.height / 2;
+            const rx = node.width / 2;
+            const ry = node.height / 2;
 
             return (
               <g
                 key={node.id}
-                transform={`translate(0, ${y})`}
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
                 className="cursor-pointer"
-                style={{ transition: 'all 0.3s' }}
+                style={{ transition: 'all 0.3s ease' }}
               >
-                {/* 节点卡片背景 */}
-                <rect
-                  x={40}
-                  y={0}
-                  width={svgWidth - 80}
-                  height={nodeHeight}
-                  rx={10}
-                  fill={isActive ? '#FFFFFF' : '#FAFAFA'}
-                  stroke={isActive ? color : isHovered ? '#9CA3AF' : '#E5E7EB'}
-                  strokeWidth={isActive ? 2.5 : 1.5}
-                  filter="url(#shadow)"
-                  className="transition-all duration-300"
-                />
+                {/* Pulsing glow for active node */}
+                {isActive && (
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={rx + 10}
+                    ry={ry + 10}
+                    fill={cfg.glow}
+                    className="pulse-glow"
+                  />
+                )}
 
-                {/* 左侧彩色条 */}
-                <rect
-                  x={40}
-                  y={0}
-                  width={4}
-                  height={nodeHeight}
-                  rx={2}
-                  fill={color}
-                  className="transition-all duration-300"
-                />
+                {/* Node shape based on type */}
+                {cfg.shape === 'circle' ? (
+                  <>
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={rx}
+                      fill={isActive ? cfg.color : cfg.bg}
+                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
+                      strokeWidth={isActive ? 3 : 2}
+                      filter="url(#shadow-sm)"
+                      className="transition-all duration-300"
+                    />
+                  </>
+                ) : cfg.shape === 'diamond' ? (
+                  <>
+                    <polygon
+                      points={`${cx},${node.y} ${cx + rx},${cy} ${cx},${node.y + node.height} ${cx - rx},${cy}`}
+                      fill={isActive ? cfg.color : cfg.bg}
+                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
+                      strokeWidth={isActive ? 3 : 2}
+                      filter="url(#shadow-sm)"
+                      className="transition-all duration-300"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <rect
+                      x={node.x - rx}
+                      y={node.y}
+                      width={node.width}
+                      height={node.height}
+                      rx={10}
+                      fill={isActive ? cfg.color : cfg.bg}
+                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
+                      strokeWidth={isActive ? 3 : 2}
+                      filter="url(#shadow-sm)"
+                      className="transition-all duration-300"
+                    />
+                  </>
+                )}
 
-                {/* 图标圆圈 */}
-                <circle
-                  cx={78}
-                  cy={nodeHeight / 2}
-                  r={18}
-                  fill={isActive ? color : '#F3F4F6'}
-                  className="transition-all duration-300"
-                />
-
-                {/* 步骤序号 */}
-                <circle
-                  cx={78}
-                  cy={nodeHeight / 2}
-                  r={18}
-                  fill="transparent"
-                  stroke={isActive ? color : '#D1D5DB'}
-                  strokeWidth={1.5}
-                  className="transition-all duration-300"
-                />
-                <text
-                  x={78}
-                  y={nodeHeight / 2 + 4}
-                  textAnchor="middle"
-                  fill={isActive ? '#FFFFFF' : '#6B7280'}
-                  fontSize="11"
-                  fontWeight="bold"
-                  className="transition-all duration-300"
+                {/* Icon */}
+                <foreignObject
+                  x={cx - 10}
+                  y={cy - 10 - (node.sublabel ? 6 : 0)}
+                  width={20}
+                  height={20}
                 >
-                  {i + 1}
-                </text>
+                  <div className="flex items-center justify-center w-full h-full">
+                    <Icon size={14} color={isActive ? '#FFFFFF' : cfg.color} />
+                  </div>
+                </foreignObject>
 
-                {/* 节点标题 */}
+                {/* Label */}
                 <text
-                  x={110}
-                  y={22}
-                  fill={isActive ? color : '#1F2937'}
-                  fontSize="13"
+                  x={cx}
+                  y={cy + 14 - (node.sublabel ? 2 : 0)}
+                  textAnchor="middle"
+                  fill={isActive ? '#FFFFFF' : '#1F2937'}
+                  fontSize="11"
                   fontWeight="bold"
                   className="transition-all duration-300"
                 >
                   {node.label}
                 </text>
 
-                {/* 节点描述 */}
-                <text
-                  x={110}
-                  y={42}
-                  fill="#6B7280"
-                  fontSize="10"
-                >
-                  {node.description.length > 55 ? node.description.slice(0, 55) + '...' : node.description}
-                </text>
-
-                {/* Skills标签 */}
-                <text
-                  x={110}
-                  y={60}
-                  fill="#4F46E5"
-                  fontSize="9"
-                  fontWeight="500"
-                >
-                  Skills: {node.skills.slice(0, 2).join(', ')}{node.skills.length > 2 ? '...' : ''}
-                </text>
-
-                {/* 输出结果 */}
-                {isActive && node.output && (
-                  <g>
-                    <rect
-                      x={svgWidth - 220}
-                      y={nodeHeight - 28}
-                      width={180}
-                      height={20}
-                      rx={4}
-                      fill="#ECFDF5"
-                      stroke="#10B981"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={svgWidth - 130}
-                      y={nodeHeight - 15}
-                      textAnchor="middle"
-                      fill="#059669"
-                      fontSize="8"
-                      fontWeight="500"
-                    >
-                      {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
-                    </text>
-                  </g>
+                {/* Sublabel */}
+                {node.sublabel && (
+                  <text
+                    x={cx}
+                    y={cy + 26}
+                    textAnchor="middle"
+                    fill={isActive ? 'rgba(255,255,255,0.85)' : '#6B7280'}
+                    fontSize="9"
+                    className="transition-all duration-300"
+                  >
+                    {node.sublabel}
+                  </text>
                 )}
 
-                {/* 悬停时的详细数据 */}
+                {/* Rich tooltip on hover */}
                 {isHovered && (
                   <g>
                     <rect
-                      x={svgWidth - 200}
-                      y={4}
-                      width={160}
-                      height={50}
-                      rx={6}
+                      x={Math.min(cx + 20, svgWidth - 220)}
+                      y={Math.max(node.y - 80, 10)}
+                      width={200}
+                      height={node.output ? 100 : 72}
+                      rx={10}
                       fill="#FFFFFF"
-                      stroke={color}
+                      stroke="#E5E7EB"
                       strokeWidth={1}
-                      filter="url(#shadow)"
+                      filter="url(#shadow-sm)"
                     />
-                    <text x={svgWidth - 190} y={18} fill="#6B7280" fontSize="8" fontWeight="bold">数据</text>
-                    <text x={svgWidth - 190} y={30} fill="#374151" fontSize="8">{node.dataSources.slice(0, 2).join(', ')}</text>
-                    <text x={svgWidth - 190} y={44} fill="#6B7280" fontSize="8" fontWeight="bold">本体</text>
-                    <text x={svgWidth - 160} y={44} fill="#374151" fontSize="8">{node.ontologies.filter(Boolean).slice(0, 3).join(', ')}</text>
+                    <text
+                      x={Math.min(cx + 32, svgWidth - 208)}
+                      y={Math.max(node.y - 60, 30)}
+                      fill={cfg.color}
+                      fontSize="11"
+                      fontWeight="bold"
+                    >
+                      {node.label}
+                    </text>
+                    <text
+                      x={Math.min(cx + 32, svgWidth - 208)}
+                      y={Math.max(node.y - 44, 46)}
+                      fill="#6B7280"
+                      fontSize="9"
+                    >
+                      {node.description && node.description.length > 30 ? node.description.slice(0, 30) + '...' : node.description}
+                    </text>
+                    {node.skills && node.skills.length > 0 && (
+                      <text
+                        x={Math.min(cx + 32, svgWidth - 208)}
+                        y={Math.max(node.y - 30, 60)}
+                        fill="#4F46E5"
+                        fontSize="8"
+                        fontWeight="500"
+                      >
+                        Skills: {node.skills.slice(0, 2).join(', ')}
+                      </text>
+                    )}
+                    {node.dataSources && node.dataSources.length > 0 && (
+                      <text
+                        x={Math.min(cx + 32, svgWidth - 208)}
+                        y={Math.max(node.y - 18, 72)}
+                        fill="#0891B2"
+                        fontSize="8"
+                        fontWeight="500"
+                      >
+                        Data: {node.dataSources.slice(0, 2).join(', ')}
+                      </text>
+                    )}
+                    {node.output && (
+                      <text
+                        x={Math.min(cx + 32, svgWidth - 208)}
+                        y={Math.max(node.y - 4, 86)}
+                        fill="#059669"
+                        fontSize="8"
+                        fontWeight="500"
+                      >
+                        {node.output.length > 35 ? node.output.slice(0, 35) + '...' : node.output}
+                      </text>
+                    )}
                   </g>
                 )}
               </g>
             );
           })}
+
+          {/* Active node output banner at bottom */}
+          {activeNode?.output && (
+            <g>
+              <rect
+                x={padding}
+                y={svgHeight - 44}
+                width={svgWidth - padding * 2}
+                height={32}
+                rx={8}
+                fill="#ECFDF5"
+                stroke="#A7F3D0"
+                strokeWidth={1}
+              />
+              <text
+                x={svgWidth / 2}
+                y={svgHeight - 24}
+                textAnchor="middle"
+                fill="#059669"
+                fontSize="11"
+                fontWeight="500"
+              >
+                {activeNode.output}
+              </text>
+            </g>
+          )}
         </svg>
       </div>
 
-      {/* 底部统计 */}
+      {/* Bottom stats */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: '调用技能', value: `${nodes.reduce((s, n) => s + n.skills.length, 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
-          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
-          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
-          { label: '推演节点', value: `${nodes.length}步`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+          { label: '调用技能', value: `${nodes.reduce((s, n) => s + (n.skills?.length || 0), 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources || []))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies || []).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
+          { label: '推演节点', value: `${nodes.length}个`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
         ].map(stat => (
           <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
             <div className={`p-1.5 rounded-md ${stat.color}`}>
