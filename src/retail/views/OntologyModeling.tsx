@@ -1,326 +1,193 @@
-import { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Database, Plus, Search, CheckCircle2, GitMerge, Link2, Layers,
-  ChevronRight, ChevronDown, Box, FileText, Terminal, Play,
-  Wand2, Save, Server, Table2, Sparkles, ArrowRight, ArrowLeft, Network,
-  Activity, ShieldCheck, Wrench, Users, Headset, Truck, FileSpreadsheet, AlertTriangle,
-  Trash2, Edit3, X, Info, ShoppingCart, CreditCard, User, Tag, Percent, MapPin
+  Database, Plus, Search, Server, Table2, ChevronRight, ChevronDown, Box,
+  Wand2, Save, Network, Settings, X, ZoomIn, ZoomOut, Move, Trash2,
+  GitMerge, Eye, Sparkles, ArrowRight, Link2, Layers
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import RETAIL_ONTOLOGY_LIBRARY from '../constants/ontology';
+import type { Ontology } from '../constants/ontology';
 
-type TabKey = 'discovery' | 'mapping' | 'ontology' | 'instances';
+type TabKey = 'discovery' | 'graph' | 'ontology' | 'instances';
 
-// --- Retail Data Sources ---
+/* ============================================================
+   Domain Colors
+   ============================================================ */
+const DOMAIN_COLORS: Record<string, { bg: string; text: string; border: string; light: string }> = {
+  '门店域': { bg: 'bg-blue-500', text: 'text-blue-700', border: 'border-blue-200', light: 'bg-blue-50' },
+  '商品域': { bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-200', light: 'bg-emerald-50' },
+  '供应链域': { bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-200', light: 'bg-amber-50' },
+  '会员域': { bg: 'bg-violet-500', text: 'text-violet-700', border: 'border-violet-200', light: 'bg-violet-50' },
+  '销售域': { bg: 'bg-cyan-500', text: 'text-cyan-700', border: 'border-cyan-200', light: 'bg-cyan-50' },
+  '营销域': { bg: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-200', light: 'bg-rose-50' },
+  '财务域': { bg: 'bg-slate-500', text: 'text-slate-700', border: 'border-slate-200', light: 'bg-slate-50' },
+  '竞品域': { bg: 'bg-orange-500', text: 'text-orange-700', border: 'border-orange-200', light: 'bg-orange-50' },
+  '自定义': { bg: 'bg-gray-500', text: 'text-gray-700', border: 'border-gray-200', light: 'bg-gray-50' },
+};
+
+/* ============================================================
+   Data Sources (Tab 1)
+   ============================================================ */
 const DATA_SOURCES = [
   {
-    id: 'pos', name: 'POS 销售系统', type: 'mysql', icon: ShoppingCart, color: 'text-blue-500',
+    id: 'pos', name: 'POS系统', type: 'mysql', icon: Server,
     tables: [
-      {
-        id: 'pos_transaction', name: 'pos_transaction', rows: 8500000, recognizedAs: 'POSTransaction', confidence: 96,
-        reasons: ['表名 pos_transaction 匹配POS交易', '包含 txn_time, amount, payment_type'],
-        fields: [
-          { name: 'txn_id', type: 'varchar(32)', comment: '交易ID' },
-          { name: 'pos_id', type: 'varchar(20)', comment: 'POS终端编号' },
-          { name: 'store_id', type: 'varchar(20)', comment: '门店ID' },
-          { name: 'txn_time', type: 'datetime', comment: '交易时间' },
-          { name: 'amount', type: 'decimal(10,2)', comment: '交易金额' },
-          { name: 'item_count', type: 'int', comment: '商品件数' },
-          { name: 'payment_type', type: 'varchar(20)', comment: '支付方式 (微信/支付宝/现金)' },
-        ]
-      },
-      {
-        id: 'pos_daily_summary', name: 'pos_daily_summary', rows: 12000, recognizedAs: 'SalesTarget', confidence: 88,
-        reasons: ['表名 pos_daily_summary 匹配日销售汇总', '包含 daily_gmv, daily_orders'],
-        fields: [
-          { name: 'summary_id', type: 'varchar(32)', comment: '汇总ID' },
-          { name: 'store_id', type: 'varchar(20)', comment: '门店ID' },
-          { name: 'summary_date', type: 'date', comment: '汇总日期' },
-          { name: 'daily_gmv', type: 'decimal(12,2)', comment: '日GMV' },
-          { name: 'daily_orders', type: 'int', comment: '日订单数' },
-          { name: 'daily_customers', type: 'int', comment: '日客数' },
-        ]
-      },
+      { id: 'pos_transaction', name: 'pos_transaction', rows: '1.2亿', recognizedAs: 'POSTransaction', confidence: 95, fields: [{ name: 'txn_id', type: 'varchar(32)', comment: '交易ID' }, { name: 'store_id', type: 'varchar(32)', comment: '门店ID → Store' }, { name: 'amount', type: 'decimal(10,2)', comment: '交易金额' }, { name: 'txn_time', type: 'datetime', comment: '交易时间' }] },
+      { id: 'pos_daily_summary', name: 'pos_daily_summary', rows: '4500万', recognizedAs: 'SalesTarget', confidence: 88, fields: [{ name: 'store_id', type: 'varchar(32)', comment: '门店ID' }, { name: 'summary_date', type: 'date', comment: '汇总日期' }, { name: 'total_amount', type: 'decimal(12,2)', comment: '日销售总额' }] },
+      { id: 'member_checkin', name: 'member_checkin', rows: '8900万', recognizedAs: 'MemberBehavior', confidence: 91, fields: [{ name: 'checkin_id', type: 'varchar(32)', comment: '签到ID' }, { name: 'member_id', type: 'varchar(32)', comment: '会员ID → Member' }, { name: 'store_id', type: 'varchar(32)', comment: '门店ID' }, { name: 'checkin_time', type: 'datetime', comment: '签到时间' }] },
     ]
   },
   {
-    id: 'erp', name: 'ERP 企业资源计划', type: 'oracle', icon: Database, color: 'text-slate-600',
+    id: 'erp', name: 'ERP系统', type: 'oracle', icon: Database,
     tables: [
-      {
-        id: 'erp_sales_order', name: 'sales_order', rows: 450000, recognizedAs: 'SalesOrder', confidence: 90,
-        reasons: ['表名 sales_order 匹配销售订单', '包含 store_id, total_amount, order_date'],
-        fields: [
-          { name: 'so_id', type: 'varchar(32)', comment: '订单ID' },
-          { name: 'so_no', type: 'varchar(50)', comment: '订单编号' },
-          { name: 'store_id', type: 'varchar(20)', comment: '门店ID' },
-          { name: 'member_id', type: 'varchar(32)', comment: '会员ID' },
-          { name: 'total_amount', type: 'decimal(10,2)', comment: '订单总金额' },
-          { name: 'discount_amount', type: 'decimal(10,2)', comment: '优惠金额' },
-          { name: 'order_date', type: 'datetime', comment: '下单时间' },
-        ]
-      },
-      {
-        id: 'erp_inventory_ledger', name: 'inventory_ledger', rows: 120000, recognizedAs: 'Inventory', confidence: 92,
-        reasons: ['表名 inventory_ledger 匹配库存台账', '包含 sku_id, qty_on_hand, expiry_date'],
-        fields: [
-          { name: 'inventory_id', type: 'varchar(32)', comment: '库存ID' },
-          { name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID' },
-          { name: 'location_type', type: 'varchar(20)', comment: '库位类型 (门店/仓库)' },
-          { name: 'location_id', type: 'varchar(20)', comment: '库位ID' },
-          { name: 'qty_on_hand', type: 'decimal(10,2)', comment: '在手库存' },
-          { name: 'qty_reserved', type: 'decimal(10,2)', comment: '预留库存' },
-          { name: 'expiry_date', type: 'date', comment: '保质期' },
-        ]
-      },
-      {
-        id: 'erp_member_profile', name: 'member_profile', rows: 8500000, recognizedAs: 'Member', confidence: 95,
-        reasons: ['表名 member_profile 匹配会员档案', '包含 phone, tier, lifetime_value'],
-        fields: [
-          { name: 'member_id', type: 'varchar(32)', comment: '会员ID' },
-          { name: 'member_name', type: 'varchar(50)', comment: '会员姓名' },
-          { name: 'phone', type: 'varchar(20)', comment: '手机号' },
-          { name: 'tier', type: 'varchar(10)', comment: '会员等级' },
-          { name: 'register_date', type: 'date', comment: '注册日期' },
-          { name: 'total_points', type: 'int', comment: '总积分' },
-          { name: 'lifetime_value', type: 'decimal(12,2)', comment: '生命周期价值' },
-        ]
-      },
+      { id: 'erp_sales_order', name: 'sales_order', rows: '8500万', recognizedAs: 'SalesOrder', confidence: 92, fields: [{ name: 'so_id', type: 'varchar(32)', comment: '订单ID' }, { name: 'store_id', type: 'varchar(32)', comment: '门店ID' }, { name: 'member_id', type: 'varchar(32)', comment: '会员ID' }, { name: 'total_amount', type: 'decimal(10,2)', comment: '订单金额' }] },
+      { id: 'erp_inventory', name: 'inventory_ledger', rows: '8500万', recognizedAs: 'Inventory', confidence: 90, fields: [{ name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID → SKU' }, { name: 'location_id', type: 'varchar(32)', comment: '库位ID' }, { name: 'qty_on_hand', type: 'decimal(10,2)', comment: '在手库存' }, { name: 'expiry_date', type: 'date', comment: '保质期' }] },
+      { id: 'erp_purchase_order', name: 'purchase_order', rows: '120万', recognizedAs: 'PurchaseOrder', confidence: 94, fields: [{ name: 'po_id', type: 'varchar(32)', comment: '采购单ID' }, { name: 'supplier_id', type: 'varchar(32)', comment: '供应商ID → Supplier' }, { name: 'total_amount', type: 'decimal(10,2)', comment: '总金额' }, { name: 'status', type: 'varchar(20)', comment: '订单状态' }] },
+      { id: 'erp_settlement', name: 'settlement', rows: '45万', recognizedAs: 'Settlement', confidence: 87, fields: [{ name: 'settle_id', type: 'varchar(32)', comment: '结算ID' }, { name: 'counterparty_id', type: 'varchar(32)', comment: '结算方ID' }, { name: 'amount', type: 'decimal(10,2)', comment: '结算金额' }, { name: 'period', type: 'varchar(20)', comment: '结算周期' }] },
     ]
   },
   {
-    id: 'wms', name: 'WMS 仓储管理系统', type: 'mysql', icon: Box, color: 'text-teal-500',
+    id: 'wms', name: 'WMS系统', type: 'mysql', icon: Database,
     tables: [
-      {
-        id: 'wms_warehouse_stock', name: 'warehouse_stock', rows: 85000, recognizedAs: 'Inventory', confidence: 94,
-        reasons: ['表名 warehouse_stock 匹配仓库库存', '包含 warehouse_id, sku_id, stock_qty'],
-        fields: [
-          { name: 'stock_id', type: 'varchar(32)', comment: '库存ID' },
-          { name: 'warehouse_id', type: 'varchar(20)', comment: '仓库ID' },
-          { name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID' },
-          { name: 'stock_qty', type: 'decimal(10,2)', comment: '库存数量' },
-          { name: 'available_qty', type: 'decimal(10,2)', comment: '可用数量' },
-          { name: 'last_update', type: 'datetime', comment: '最后更新' },
-        ]
-      },
-      {
-        id: 'wms_distribution_order', name: 'distribution_order', rows: 56000, recognizedAs: 'Distribution', confidence: 91,
-        reasons: ['表名 distribution_order 匹配配送单', '包含 store_id, warehouse_id, delivery_date'],
-        fields: [
-          { name: 'dist_id', type: 'varchar(32)', comment: '配送单ID' },
-          { name: 'dist_no', type: 'varchar(50)', comment: '配送单号' },
-          { name: 'warehouse_id', type: 'varchar(20)', comment: '发货仓库' },
-          { name: 'store_id', type: 'varchar(20)', comment: '目标门店' },
-          { name: 'status', type: 'varchar(20)', comment: '状态 (待发货/配送中/已签收)' },
-          { name: 'delivery_date', type: 'date', comment: '配送日期' },
-        ]
-      },
+      { id: 'wms_stock', name: 'warehouse_stock', rows: '8500万', recognizedAs: 'Inventory', confidence: 93, fields: [{ name: 'stock_id', type: 'varchar(32)', comment: '库存记录ID' }, { name: 'warehouse_id', type: 'varchar(32)', comment: '仓库ID → Warehouse' }, { name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID' }, { name: 'qty', type: 'int', comment: '库存数量' }] },
+      { id: 'wms_dist', name: 'distribution_order', rows: '320万', recognizedAs: 'Distribution', confidence: 89, fields: [{ name: 'dist_id', type: 'varchar(32)', comment: '配送单ID' }, { name: 'warehouse_id', type: 'varchar(32)', comment: '仓库ID' }, { name: 'store_id', type: 'varchar(32)', comment: '门店ID' }, { name: 'status', type: 'varchar(20)', comment: '配送状态' }] },
+      { id: 'wms_qc', name: 'quality_check_record', rows: '180万', recognizedAs: 'QualityCheck', confidence: 91, fields: [{ name: 'qc_id', type: 'varchar(32)', comment: '质检ID' }, { name: 'batch_no', type: 'varchar(50)', comment: '批次号' }, { name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID' }, { name: 'result', type: 'varchar(10)', comment: '质检结果' }] },
     ]
   },
   {
-    id: 'member', name: '会员系统', type: 'postgresql', icon: User, color: 'text-rose-500',
+    id: 'member', name: '会员系统', type: 'postgres', icon: Database,
     tables: [
-      {
-        id: 'mem_member', name: 'member', rows: 8500000, recognizedAs: 'Member', confidence: 98,
-        reasons: ['表名 member 强语义匹配', '包含 member_id, phone, tier'],
-        fields: [
-          { name: 'member_id', type: 'varchar(32)', comment: '会员ID' },
-          { name: 'phone', type: 'varchar(20)', comment: '手机号' },
-          { name: 'tier', type: 'varchar(10)', comment: '会员等级' },
-          { name: 'register_channel', type: 'varchar(20)', comment: '注册渠道' },
-          { name: 'last_purchase_date', type: 'date', comment: '最近购买日期' },
-        ]
-      },
-      {
-        id: 'mem_promotion', name: 'promotion', rows: 1200, recognizedAs: 'Promotion', confidence: 93,
-        reasons: ['表名 promotion 匹配促销活动', '包含 promo_type, start_date, budget'],
-        fields: [
-          { name: 'promo_id', type: 'varchar(32)', comment: '活动ID' },
-          { name: 'promo_name', type: 'varchar(100)', comment: '活动名称' },
-          { name: 'promo_type', type: 'varchar(20)', comment: '活动类型 (满减/折扣/赠品)' },
-          { name: 'start_date', type: 'date', comment: '开始日期' },
-          { name: 'end_date', type: 'date', comment: '结束日期' },
-          { name: 'budget', type: 'decimal(12,2)', comment: '活动预算' },
-        ]
-      },
-      {
-        id: 'mem_coupon', name: 'coupon', rows: 450000, recognizedAs: 'Coupon', confidence: 95,
-        reasons: ['表名 coupon 匹配优惠券', '包含 coupon_type, discount_value, valid_to'],
-        fields: [
-          { name: 'coupon_id', type: 'varchar(32)', comment: '优惠券ID' },
-          { name: 'coupon_code', type: 'varchar(50)', comment: '券码' },
-          { name: 'coupon_type', type: 'varchar(20)', comment: '券类型' },
-          { name: 'discount_value', type: 'decimal(10,2)', comment: '优惠金额' },
-          { name: 'min_order_amount', type: 'decimal(10,2)', comment: '最低消费金额' },
-          { name: 'valid_to', type: 'date', comment: '有效期至' },
-        ]
-      },
+      { id: 'crm_member', name: 'member', rows: '3600万', recognizedAs: 'Member', confidence: 94, fields: [{ name: 'member_id', type: 'varchar(32)', comment: '会员ID' }, { name: 'phone', type: 'varchar(20)', comment: '手机号' }, { name: 'tier', type: 'varchar(10)', comment: '会员等级' }, { name: 'register_date', type: 'date', comment: '注册日期' }] },
+      { id: 'crm_promotion', name: 'promotion', rows: '1200万', recognizedAs: 'Promotion', confidence: 89, fields: [{ name: 'promo_id', type: 'varchar(32)', comment: '活动ID' }, { name: 'promo_name', type: 'varchar(100)', comment: '活动名称' }, { name: 'start_date', type: 'date', comment: '开始日期' }, { name: 'budget', type: 'decimal(12,2)', comment: '活动预算' }] },
+      { id: 'crm_coupon', name: 'coupon', rows: '5800万', recognizedAs: 'Coupon', confidence: 88, fields: [{ name: 'coupon_id', type: 'varchar(32)', comment: '优惠券ID' }, { name: 'coupon_code', type: 'varchar(50)', comment: '券码' }, { name: 'discount_value', type: 'decimal(8,2)', comment: '折扣金额' }, { name: 'valid_to', type: 'date', comment: '有效期至' }] },
+      { id: 'crm_member_tag', name: 'member_tag', rows: '1.2亿', recognizedAs: 'MemberTag', confidence: 85, fields: [{ name: 'tag_id', type: 'varchar(32)', comment: '标签ID' }, { name: 'member_id', type: 'varchar(32)', comment: '会员ID' }, { name: 'tag_name', type: 'varchar(50)', comment: '标签名' }, { name: 'tag_value', type: 'varchar(100)', comment: '标签值' }] },
+      { id: 'crm_loyalty', name: 'loyalty_program', rows: '3600万', recognizedAs: 'LoyaltyProgram', confidence: 90, fields: [{ name: 'program_id', type: 'varchar(32)', comment: '计划ID' }, { name: 'member_id', type: 'varchar(32)', comment: '会员ID' }, { name: 'points_balance', type: 'int', comment: '积分余额' }, { name: 'tier', type: 'varchar(10)', comment: '当前等级' }] },
     ]
   },
   {
-    id: 'crm', name: 'CRM 客户关系系统', type: 'rest', icon: Users, color: 'text-indigo-500',
+    id: 'crm', name: 'CRM系统', type: 'rest', icon: Database,
     tables: [
-      {
-        id: 'crm_customer_feedback', name: 'customer_feedback', rows: 56000, recognizedAs: 'CustomerFeedback', confidence: 90,
-        reasons: ['接口名 customer_feedback 匹配客户反馈', '包含 feedback_type, satisfaction_score'],
-        fields: [
-          { name: 'feedback_id', type: 'string', comment: '反馈ID' },
-          { name: 'member_id', type: 'string', comment: '会员ID' },
-          { name: 'store_id', type: 'string', comment: '门店ID' },
-          { name: 'feedback_type', type: 'string', comment: '反馈类型 (投诉/建议/表扬)' },
-          { name: 'satisfaction_score', type: 'int', comment: '满意度评分 (1-5)' },
-          { name: 'create_time', type: 'datetime', comment: '创建时间' },
-        ]
-      },
-      {
-        id: 'crm_campaign_effect', name: 'campaign_effect', rows: 8900, recognizedAs: 'CampaignEffect', confidence: 88,
-        reasons: ['接口名 campaign_effect 匹配活动效果', '包含 campaign_id, conversion_rate, roi'],
-        fields: [
-          { name: 'campaign_id', type: 'string', comment: '活动ID' },
-          { name: 'reach_count', type: 'int', comment: '触达人数' },
-          { name: 'conversion_count', type: 'int', comment: '转化人数' },
-          { name: 'conversion_rate', type: 'decimal(5,2)', comment: '转化率%' },
-          { name: 'roi', type: 'decimal(5,2)', comment: 'ROI' },
-        ]
-      },
+      { id: 'crm_feedback', name: 'customer_feedback', rows: '560万', recognizedAs: 'ProductReview', confidence: 86, fields: [{ name: 'feedback_id', type: 'varchar(32)', comment: '反馈ID' }, { name: 'member_id', type: 'varchar(32)', comment: '会员ID' }, { name: 'content', type: 'text', comment: '反馈内容' }, { name: 'rating', type: 'int', comment: '评分' }] },
+      { id: 'crm_campaign', name: 'campaign_effect', rows: '120万', recognizedAs: 'AdCampaign', confidence: 84, fields: [{ name: 'campaign_id', type: 'varchar(32)', comment: '活动ID' }, { name: 'channel', type: 'varchar(50)', comment: '投放渠道' }, { name: 'impressions', type: 'bigint', comment: '曝光量' }, { name: 'conversions', type: 'int', comment: '转化数' }] },
+    ]
+  },
+  {
+    id: 'bi', name: 'BI系统', type: 'clickhouse', icon: Database,
+    tables: [
+      { id: 'bi_anomaly', name: 'sales_anomaly', rows: '45万', recognizedAs: 'SalesAnomaly', confidence: 92, fields: [{ name: 'anomaly_id', type: 'varchar(32)', comment: '异常ID' }, { name: 'store_id', type: 'varchar(32)', comment: '门店ID' }, { name: 'anomaly_type', type: 'varchar(50)', comment: '异常类型' }, { name: 'severity', type: 'varchar(10)', comment: '严重程度' }] },
+      { id: 'bi_forecast', name: 'demand_forecast', rows: '2800万', recognizedAs: 'DemandForecast', confidence: 88, fields: [{ name: 'forecast_id', type: 'varchar(32)', comment: '预测ID' }, { name: 'sku_id', type: 'varchar(32)', comment: 'SKU ID' }, { name: 'forecast_qty', type: 'int', comment: '预测量' }, { name: 'confidence', type: 'decimal(4,2)', comment: '置信度' }] },
+      { id: 'bi_competitor', name: 'competitor_price', rows: '1800万', recognizedAs: 'MarketPrice', confidence: 85, fields: [{ name: 'mp_id', type: 'varchar(32)', comment: '价格ID' }, { name: 'product_id', type: 'varchar(32)', comment: '商品ID' }, { name: 'market_price', type: 'decimal(10,2)', comment: '市场价' }, { name: 'collect_date', type: 'date', comment: '采集日期' }] },
     ]
   },
 ];
 
-// Templates based on retail ontology
-const TEMPLATES = [
+/* ============================================================
+   Graph Data (Tab 2)
+   ============================================================ */
+interface GraphNode { id: string; label: string; x: number; y: number; domain: string; }
+interface GraphEdge { id: string; source: string; target: string; label: string; }
+
+const INITIAL_GRAPH_NODES: GraphNode[] = [
+  { id: 'store', label: '门店', x: 400, y: 200, domain: '门店域' },
+  { id: 'product', label: '商品', x: 200, y: 80, domain: '商品域' },
+  { id: 'member', label: '会员', x: 650, y: 80, domain: '会员域' },
+  { id: 'sales_order', label: '销售订单', x: 400, y: 380, domain: '销售域' },
+  { id: 'inventory', label: '库存', x: 80, y: 220, domain: '供应链域' },
+  { id: 'promotion', label: '促销', x: 720, y: 220, domain: '会员域' },
+  { id: 'supplier', label: '供应商', x: 80, y: 420, domain: '供应链域' },
+  { id: 'warehouse', label: '仓库', x: 220, y: 480, domain: '供应链域' },
+  { id: 'competitor', label: '竞品', x: 720, y: 420, domain: '竞品域' },
+  { id: 'ad_campaign', label: '广告投放', x: 550, y: 40, domain: '营销域' },
+  { id: 'category', label: '品类', x: 80, y: 80, domain: '商品域' },
+  { id: 'return_order', label: '退货', x: 550, y: 480, domain: '供应链域' },
+];
+
+const INITIAL_GRAPH_EDGES: GraphEdge[] = [
+  { id: 'e1', source: 'store', target: 'sales_order', label: '产生' },
+  { id: 'e2', source: 'product', target: 'sales_order', label: '包含于' },
+  { id: 'e3', source: 'member', target: 'sales_order', label: '下单' },
+  { id: 'e4', source: 'inventory', target: 'store', label: '供应' },
+  { id: 'e5', source: 'product', target: 'inventory', label: '存储为' },
+  { id: 'e6', source: 'promotion', target: 'sales_order', label: '应用于' },
+  { id: 'e7', source: 'supplier', target: 'product', label: '供应' },
+  { id: 'e8', source: 'warehouse', target: 'inventory', label: '存储' },
+  { id: 'e9', source: 'competitor', target: 'product', label: '竞争' },
+  { id: 'e10', source: 'ad_campaign', target: 'promotion', label: '推广' },
+  { id: 'e11', source: 'member', target: 'promotion', label: '接收' },
+  { id: 'e12', source: 'category', target: 'product', label: '包含' },
+  { id: 'e13', source: 'sales_order', target: 'return_order', label: '可退' },
+  { id: 'e14', source: 'store', target: 'return_order', label: '处理' },
+];
+
+/* ============================================================
+   Instance Scenarios (Tab 4)
+   ============================================================ */
+const SCENARIOS = [
   {
-    id: 'tpl_store', name: '门店模板', category: '门店域',
-    structure: `{\n  "entity": "Store",\n  "attributes": [\n    "store_id", \n    "store_code", \n    "store_name",\n    "area_sqm",\n    "open_date"\n  ],\n  "relations": [\n    {"type": "belongs_to", "target": "Region"},\n    {"type": "belongs_to", "target": "City"}\n  ],\n  "behaviors": [\n    "calculate_revenue_per_sqm"\n  ]\n}`,
-    mappings: [
-      { source: 'store_id', target: 'store_id', status: 'mapped', auto: true },
-      { source: 'store_code', target: 'store_code', status: 'mapped', auto: true },
-      { source: 'store_name', target: 'store_name', status: 'mapped', auto: true },
+    id: 'promotion', name: '618大促促销场景',
+    nodes: [
+      { id: 'n1', label: '门店SH-001', type: '门店', x: 100, y: 150 },
+      { id: 'n2', label: '会员张三', type: '会员', x: 300, y: 50 },
+      { id: 'n3', label: '促销618-坚果', type: '促销', x: 500, y: 50 },
+      { id: 'n4', label: '坚果礼盒LYF-001', type: '商品', x: 300, y: 250 },
+      { id: 'n5', label: '库存WH-001', type: '库存', x: 100, y: 350 },
+      { id: 'n6', label: '订单SO-1284', type: '订单', x: 500, y: 250 },
+    ],
+    edges: [
+      { source: 'n2', target: 'n6', label: '下单' },
+      { source: 'n3', target: 'n6', label: '优惠' },
+      { source: 'n4', target: 'n6', label: '商品' },
+      { source: 'n5', target: 'n4', label: '供货' },
+      { source: 'n1', target: 'n5', label: '门店库存' },
+      { source: 'n1', target: 'n6', label: '成交' },
     ]
   },
   {
-    id: 'tpl_product', name: '商品模板', category: '商品域',
-    structure: `{\n  "entity": "Product",\n  "attributes": [\n    "product_id", \n    "product_code", \n    "product_name",\n    "unit_price",\n    "cost_price",\n    "shelf_life_days"\n  ],\n  "relations": [\n    {"type": "belongs_to", "target": "Category"},\n    {"type": "belongs_to", "target": "Brand"}\n  ],\n  "behaviors": [\n    "calculate_margin"\n  ]\n}`,
-    mappings: [
-      { source: 'product_id', target: 'product_id', status: 'mapped', auto: true },
-      { source: 'product_code', target: 'product_code', status: 'mapped', auto: true },
-      { source: 'product_name', target: 'product_name', status: 'mapped', auto: true },
-    ]
-  },
-  {
-    id: 'tpl_member', name: '会员模板', category: '会员域',
-    structure: `{\n  "entity": "Member",\n  "attributes": [\n    "member_id", \n    "member_name", \n    "phone",\n    "tier",\n    "lifetime_value"\n  ],\n  "relations": [\n    {"type": "places", "target": "SalesOrder"},\n    {"type": "receives", "target": "Promotion"}\n  ],\n  "behaviors": [\n    "calculate_churn_risk"\n  ]\n}`,
-    mappings: [
-      { source: 'member_id', target: 'member_id', status: 'mapped', auto: true },
-      { source: 'phone', target: 'phone', status: 'mapped', auto: true },
-      { source: 'tier', target: 'tier', status: 'mapped', auto: true },
-    ]
-  },
-  {
-    id: 'tpl_sales_order', name: '销售订单模板', category: '销售域',
-    structure: `{\n  "entity": "SalesOrder",\n  "attributes": [\n    "so_id", \n    "store_id", \n    "member_id",\n    "total_amount",\n    "order_date"\n  ],\n  "relations": [\n    {"type": "from", "target": "Store"},\n    {"type": "by", "target": "Member"}\n  ],\n  "behaviors": [\n    "track_sales_trend"\n  ]\n}`,
-    mappings: [
-      { source: 'so_id', target: 'so_id', status: 'mapped', auto: true },
-      { source: 'store_id', target: 'store_id', status: 'mapped', auto: true },
-      { source: 'total_amount', target: 'total_amount', status: 'mapped', auto: true },
-    ]
-  },
-  {
-    id: 'tpl_inventory', name: '库存模板', category: '供应链域',
-    structure: `{\n  "entity": "Inventory",\n  "attributes": [\n    "inventory_id", \n    "sku_id", \n    "qty_on_hand",\n    "qty_reserved",\n    "expiry_date"\n  ],\n  "relations": [\n    {"type": "belongs_to", "target": "SKU"},\n    {"type": "stored_in", "target": "Warehouse"}\n  ],\n  "behaviors": [\n    "check_stock_alert"\n  ]\n}`,
-    mappings: [
-      { source: 'sku_id', target: 'sku_id', status: 'mapped', auto: true },
-      { source: 'qty_on_hand', target: 'qty_on_hand', status: 'mapped', auto: true },
-      { source: 'expiry_date', target: 'expiry_date', status: 'mapped', auto: true },
-    ]
-  },
-  {
-    id: 'tpl_promotion', name: '促销模板', category: '会员域',
-    structure: `{\n  "entity": "Promotion",\n  "attributes": [\n    "promo_id", \n    "promo_name", \n    "promo_type",\n    "start_date",\n    "budget"\n  ],\n  "relations": [\n    {"type": "targets", "target": "Member"},\n    {"type": "applies_to", "target": "SKU"}\n  ],\n  "behaviors": [\n    "evaluate_roi"\n  ]\n}`,
-    mappings: [
-      { source: 'promo_id', target: 'promo_id', status: 'mapped', auto: true },
-      { source: 'promo_name', target: 'promo_name', status: 'mapped', auto: true },
-      { source: 'budget', target: 'budget', status: 'mapped', auto: true },
+    id: 'trace', name: '食品安全溯源场景',
+    nodes: [
+      { id: 'n1', label: '供应商新疆良品', type: '供应商', x: 100, y: 100 },
+      { id: 'n2', label: '坚果礼盒(Batch-05)', type: '商品', x: 300, y: 100 },
+      { id: 'n3', label: '质检QC-001', type: '质检', x: 300, y: 250 },
+      { id: 'n4', label: '门店HZ-001', type: '门店', x: 500, y: 100 },
+      { id: 'n5', label: '退货单RT-001', type: '退货', x: 500, y: 250 },
+    ],
+    edges: [
+      { source: 'n1', target: 'n2', label: '供应' },
+      { source: 'n2', target: 'n3', label: '质检' },
+      { source: 'n3', target: 'n4', label: '入库' },
+      { source: 'n4', target: 'n5', label: '退货' },
+      { source: 'n2', target: 'n5', label: '问题批次' },
     ]
   },
 ];
 
-// Ontology library from constants
-const ONTOLOGY_DOMAINS = [
-  {
-    id: 'store',
-    name: '门店域',
-    color: 'bg-blue-50 text-blue-700 border-blue-200',
-    entities: ['Store', 'Region', 'City', 'StoreManager'],
-    description: '门店、区域、城市等空间组织实体'
-  },
-  {
-    id: 'product',
-    name: '商品域',
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    entities: ['Product', 'SKU', 'Category', 'Brand'],
-    description: '商品、SKU、品类、品牌等商品实体'
-  },
-  {
-    id: 'supply',
-    name: '供应链域',
-    color: 'bg-amber-50 text-amber-700 border-amber-200',
-    entities: ['Supplier', 'Warehouse', 'Distribution', 'Inventory', 'PurchaseOrder'],
-    description: '供应商、仓库、配送、库存等供应链实体'
-  },
-  {
-    id: 'member',
-    name: '会员域',
-    color: 'bg-rose-50 text-rose-700 border-rose-200',
-    entities: ['Member', 'Promotion', 'Coupon'],
-    description: '会员、促销、优惠券等会员营销实体'
-  },
-  {
-    id: 'sales',
-    name: '销售域',
-    color: 'bg-purple-50 text-purple-700 border-purple-200',
-    entities: ['SalesOrder', 'POSTransaction', 'SalesTarget'],
-    description: '销售订单、POS交易、销售目标等销售实体'
-  },
-];
-
+/* ============================================================
+   Main Component
+   ============================================================ */
 export default function OntologyModeling() {
   const [activeTab, setActiveTab] = useState<TabKey>('discovery');
-  const [selectedSource, setSelectedSource] = useState<string | null>(null);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const tabs: { id: TabKey; label: string; icon: any }[] = [
-    { id: 'discovery', label: '数据源发现', icon: Database },
-    { id: 'mapping', label: '本体映射', icon: GitMerge },
-    { id: 'ontology', label: '本体库', icon: Layers },
-    { id: 'instances', label: '实例管理', icon: Box },
+    { id: 'discovery', label: '数据源发现', icon: Server },
+    { id: 'graph', label: '关系图谱', icon: Network },
+    { id: 'ontology', label: '本体库', icon: Box },
+    { id: 'instances', label: '实例推演', icon: Sparkles },
   ];
 
-  const currentSource = DATA_SOURCES.find(s => s.id === selectedSource);
-  const currentTable = currentSource?.tables.find(t => t.id === selectedTable);
-
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header */}
-      <header className="border-b border-slate-200">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 text-sm text-slate-600">
-          <Network size={16} className="text-slate-400" />
-          <span className="font-medium text-slate-900">Ontology Studio</span>
-        </div>
-        <div className="px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-800 text-white flex items-center justify-center">
-                <Layers size={20} />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">本体建模</h1>
-                <p className="text-sm text-slate-500">零售数据源发现与本体映射</p>
-              </div>
-            </div>
+      <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 shrink-0 bg-gray-50/50">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+            <Database size={18} />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">本体与语义建模</h2>
+            <p className="text-[10px] text-gray-500 font-mono">零售领域本体库 · 8大域 · {RETAIL_ONTOLOGY_LIBRARY.length}实体</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 px-4 border-t border-slate-200">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -328,10 +195,8 @@ export default function OntologyModeling() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-3 text-sm font-medium border-t-2 transition-colors",
-                  activeTab === tab.id
-                    ? "border-slate-800 text-slate-900"
-                    : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                  activeTab === tab.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
                 )}
               >
                 <Icon size={14} />
@@ -340,282 +205,594 @@ export default function OntologyModeling() {
             );
           })}
         </div>
-      </header>
+      </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto bg-slate-50">
-        {/* Discovery Tab */}
-        {activeTab === 'discovery' && (
-          <div className="flex h-full">
-            {/* Left: Data Sources */}
-            <div className="w-72 border-r border-slate-200 bg-white flex flex-col shrink-0">
-              <div className="p-3 border-b border-slate-200">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                  <input
-                    type="text"
-                    placeholder="搜索数据源..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-4 py-2 w-full border border-slate-200 text-sm focus:outline-none focus:border-slate-400 rounded"
-                  />
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'discovery' && <DiscoveryTab />}
+        {activeTab === 'graph' && <GraphTab />}
+        {activeTab === 'ontology' && <OntologyTab />}
+        {activeTab === 'instances' && <InstancesTab />}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Tab 1: Data Source Discovery
+   ============================================================ */
+function DiscoveryTab() {
+  const [expandedSources, setExpandedSources] = useState<string[]>(['pos', 'member']);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+
+  const toggleSource = (id: string) => {
+    setExpandedSources(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  };
+
+  const selectedTable = DATA_SOURCES.flatMap(s => s.tables).find(t => t.id === selectedTableId);
+
+  return (
+    <div className="flex h-full">
+      {/* Left Sidebar */}
+      <div className="w-80 border-r border-gray-200 bg-gray-50/30 flex flex-col">
+        <div className="p-3 border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input type="text" placeholder="搜索数据表..." className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {DATA_SOURCES.map((source) => (
+            <div key={source.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => toggleSource(source.id)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50"
+              >
+                <source.icon size={16} className="text-blue-500" />
+                <span className="text-sm font-medium text-gray-900 flex-1">{source.name}</span>
+                <span className="text-xs text-gray-400">{source.tables.length} 表</span>
+                {expandedSources.includes(source.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {expandedSources.includes(source.id) && (
+                <div className="border-t border-gray-100">
+                  {source.tables.map((table) => (
+                    <div key={table.id}>
+                      <button
+                        onClick={() => { setSelectedTableId(table.id); setExpandedTable(expandedTable === table.id ? null : table.id); }}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50",
+                          selectedTableId === table.id && "bg-blue-50"
+                        )}
+                      >
+                        <Table2 size={12} className="text-gray-400" />
+                        <span className="flex-1 font-mono text-gray-700">{table.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded">{table.confidence}%</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right Panel */}
+      <div className="flex-1 bg-white flex flex-col overflow-hidden">
+        {selectedTable ? (
+          <div className="p-6 overflow-y-auto">
+            <div className="flex items-center gap-3 mb-4">
+              <Box size={20} className="text-indigo-600" />
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{selectedTable.name}</h3>
+                <p className="text-sm text-gray-500">
+                  识别为: <span className="font-medium text-indigo-600">{selectedTable.recognizedAs}</span> · 置信度 {selectedTable.confidence}% · {selectedTable.rows} 行
+                </p>
+              </div>
+            </div>
+            <div className="mb-4 flex gap-2">
+              <button className="px-3 py-1.5 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 flex items-center gap-1">
+                <GitMerge size={12} /> 映射到本体
+              </button>
+              <button className="px-3 py-1.5 border border-gray-200 text-gray-700 text-xs rounded hover:bg-gray-50 flex items-center gap-1">
+                <Eye size={12} /> 预览数据
+              </button>
+            </div>
+            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">字段名</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">类型</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">注释</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {selectedTable.fields.map((f, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-mono text-gray-900">{f.name}</td>
+                    <td className="px-4 py-2 text-gray-600 font-mono text-xs">{f.type}</td>
+                    <td className="px-4 py-2 text-gray-500">{f.comment}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+            <Database size={48} className="mb-4 opacity-30" />
+            <p>选择左侧数据表查看详情</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Tab 2: Relationship Graph
+   ============================================================ */
+function GraphTab() {
+  const [nodes, setNodes] = useState(INITIAL_GRAPH_NODES);
+  const [edges, setEdges] = useState(INITIAL_GRAPH_EDGES);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [showAddEdge, setShowAddEdge] = useState(false);
+  const [newEdge, setNewEdge] = useState({ source: '', target: '', label: '' });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent, nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    setDragging(nodeId);
+    setDragOffset({ x: e.clientX - node.x, y: e.clientY - node.y });
+    setSelectedNodeId(nodeId);
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!dragging || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const newX = (e.clientX - rect.left - dragOffset.x) / zoom;
+    const newY = (e.clientY - rect.top - dragOffset.y) / zoom;
+    setNodes(prev => prev.map(n => n.id === dragging ? { ...n, x: Math.max(30, Math.min(870, newX)), y: Math.max(30, Math.min(520, newY)) } : n));
+  }, [dragging, dragOffset, zoom]);
+
+  const handleMouseUp = useCallback(() => setDragging(null), []);
+
+  useEffect(() => {
+    if (dragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+    }
+  }, [dragging, handleMouseMove, handleMouseUp]);
+
+  const addEdge = () => {
+    if (newEdge.source && newEdge.target && newEdge.label) {
+      setEdges(prev => [...prev, { id: `e${Date.now()}`, source: newEdge.source, target: newEdge.target, label: newEdge.label }]);
+      setNewEdge({ source: '', target: '', label: '' });
+      setShowAddEdge(false);
+    }
+  };
+
+  const deleteEdge = (edgeId: string) => setEdges(prev => prev.filter(e => e.id !== edgeId));
+
+  const selectedNode = nodes.find(n => n.id === selectedNodeId);
+  const selectedOntology = selectedNode ? RETAIL_ONTOLOGY_LIBRARY.find(o => o.id === selectedNode.id || o.name.includes(selectedNode.label)) : null;
+
+  return (
+    <div className="flex h-full">
+      {/* Graph Canvas */}
+      <div className="flex-1 relative overflow-hidden bg-gray-50" ref={containerRef}>
+        {/* Toolbar */}
+        <div className="absolute top-3 left-3 z-10 flex gap-1">
+          <button onClick={() => setZoom(z => Math.min(z + 0.1, 2))} className="p-1.5 bg-white border border-gray-200 rounded hover:bg-gray-50" title="放大"><ZoomIn size={14} /></button>
+          <button onClick={() => setZoom(z => Math.max(z - 0.1, 0.5))} className="p-1.5 bg-white border border-gray-200 rounded hover:bg-gray-50" title="缩小"><ZoomOut size={14} /></button>
+          <button onClick={() => setShowAddEdge(true)} className="p-1.5 bg-white border border-gray-200 rounded hover:bg-gray-50" title="添加关系"><Plus size={14} /></button>
+          <span className="px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-500">{zoom.toFixed(1)}x</span>
+        </div>
+
+        {/* Graph */}
+        <div className="w-full h-full relative" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+          {/* Edges (SVG) */}
+          <svg className="absolute inset-0 w-[900px] h-[550px] pointer-events-none" style={{ width: '100%', height: '100%' }}>
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" />
+              </marker>
+            </defs>
+            {edges.map(edge => {
+              const s = nodes.find(n => n.id === edge.source);
+              const t = nodes.find(n => n.id === edge.target);
+              if (!s || !t) return null;
+              const mx = (s.x + t.x) / 2;
+              const my = (s.y + t.y) / 2;
+              return (
+                <g key={edge.id}>
+                  <line x1={s.x} y1={s.y + 20} x2={t.x} y2={t.y - 20} stroke="#cbd5e1" strokeWidth={1.5} markerEnd="url(#arrow)" />
+                  <rect x={mx - 16} y={my - 8} width={32} height={16} rx={4} fill="#f1f5f9" stroke="#e2e8f0" />
+                  <text x={mx} y={my + 3} textAnchor="middle" fontSize={9} fill="#64748b">{edge.label}</text>
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Nodes */}
+          {nodes.map(node => {
+            const colors = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS['自定义'];
+            return (
+              <div
+                key={node.id}
+                onMouseDown={(e) => handleMouseDown(e, node.id)}
+                className={cn(
+                  "absolute px-3 py-2 rounded-lg text-white text-xs font-medium shadow-md cursor-move select-none transition-shadow",
+                  colors.bg,
+                  selectedNodeId === node.id && "ring-2 ring-offset-2 ring-gray-400 shadow-lg"
+                )}
+                style={{ left: node.x - 30, top: node.y - 16, minWidth: 60, textAlign: 'center' }}
+              >
+                {node.label}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Add Edge Modal */}
+        {showAddEdge && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20" onClick={() => setShowAddEdge(false)}>
+            <div className="bg-white rounded-xl shadow-xl p-5 w-80" onClick={e => e.stopPropagation()}>
+              <h3 className="font-semibold text-gray-900 mb-3">添加关系</h3>
+              <div className="space-y-3">
+                <select className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value={newEdge.source} onChange={e => setNewEdge({ ...newEdge, source: e.target.value })}>
+                  <option value="">选择源节点</option>
+                  {nodes.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                </select>
+                <select className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value={newEdge.target} onChange={e => setNewEdge({ ...newEdge, target: e.target.value })}>
+                  <option value="">选择目标节点</option>
+                  {nodes.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                </select>
+                <input type="text" placeholder="关系标签" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value={newEdge.label} onChange={e => setNewEdge({ ...newEdge, label: e.target.value })} />
+                <div className="flex gap-2">
+                  <button onClick={addEdge} className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">添加</button>
+                  <button onClick={() => setShowAddEdge(false)} className="flex-1 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50">取消</button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {DATA_SOURCES.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())).map((source) => (
-                  <div key={source.id}>
-                    <button
-                      onClick={() => { setSelectedSource(source.id); setSelectedTable(null); }}
-                      className={cn(
-                        "w-full p-3 text-left rounded-lg border transition-all",
-                        selectedSource === source.id
-                          ? "bg-slate-50 border-slate-300"
-                          : "border-transparent hover:bg-slate-50"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <source.icon size={18} className={source.color} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-slate-900">{source.name}</div>
-                          <div className="text-xs text-slate-500">{source.type} · {source.tables.length} 张表</div>
-                        </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right Panel */}
+      <div className="w-72 border-l border-gray-200 bg-white flex flex-col">
+        {selectedOntology ? (
+          <>
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Box size={18} className="text-indigo-600" />
+                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{selectedOntology.domain}</span>
+              </div>
+              <h3 className="font-bold text-gray-900">{selectedOntology.name}</h3>
+              <p className="text-xs text-gray-500 mt-1">{selectedOntology.description}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="mb-4">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wider">属性 ({selectedOntology.attributes.length})</h4>
+                <div className="flex flex-wrap gap-1">
+                  {selectedOntology.attributes.map(attr => (
+                    <span key={attr} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-[10px] font-mono rounded">{attr}</span>
+                  ))}
+                </div>
+              </div>
+              {selectedOntology.relations && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wider">关系 ({selectedOntology.relations.length})</h4>
+                  <div className="space-y-1">
+                    {selectedOntology.relations.map((rel, i) => (
+                      <div key={i} className="flex items-center gap-1 text-xs text-gray-600">
+                        <Link2 size={10} className="text-gray-400" />
+                        {rel}
                       </div>
-                    </button>
-                    {selectedSource === source.id && (
-                      <div className="ml-6 mt-1 space-y-1">
-                        {source.tables.map((table) => (
-                          <button
-                            key={table.id}
-                            onClick={() => setSelectedTable(table.id)}
-                            className={cn(
-                              "w-full p-2 text-left text-xs rounded border transition-all flex items-center gap-2",
-                              selectedTable === table.id
-                                ? "bg-sky-50 border-sky-200 text-sky-700"
-                                : "border-transparent hover:bg-slate-50 text-slate-600"
-                            )}
-                          >
-                            <Table2 size={12} />
-                            <span className="font-mono">{table.name}</span>
-                            <span className="ml-auto text-[10px] text-slate-400">{table.rows.toLocaleString()} 行</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t border-gray-200">
+              <h4 className="text-xs font-semibold text-gray-700 mb-2">相关关系</h4>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {edges.filter(e => e.source === selectedNodeId || e.target === selectedNodeId).map(edge => {
+                  const other = edge.source === selectedNodeId ? nodes.find(n => n.id === edge.target) : nodes.find(n => n.id === edge.source);
+                  return (
+                    <div key={edge.id} className="flex items-center justify-between text-xs group">
+                      <span className="text-gray-600">{edge.label} → {other?.label}</span>
+                      <button onClick={() => deleteEdge(edge.id)} className="opacity-0 group-hover:opacity-100 text-rose-500 hover:text-rose-700"><Trash2 size={12} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+            <Network size={40} className="mb-3 opacity-30" />
+            <p className="text-sm">点击节点查看详情</p>
+            <p className="text-xs mt-1">拖拽节点调整布局</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Tab 3: Ontology Library
+   ============================================================ */
+function OntologyTab() {
+  const [search, setSearch] = useState('');
+  const [domainFilter, setDomainFilter] = useState<string>('全部');
+  const [selectedOntology, setSelectedOntology] = useState<Ontology | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const domains = ['全部', ...Array.from(new Set(RETAIL_ONTOLOGY_LIBRARY.map(o => o.domain).filter(Boolean)))];
+
+  const filtered = RETAIL_ONTOLOGY_LIBRARY.filter(o => {
+    const matchDomain = domainFilter === '全部' || o.domain === domainFilter;
+    const matchSearch = !search || o.name.toLowerCase().includes(search.toLowerCase()) || o.description.toLowerCase().includes(search.toLowerCase());
+    return matchDomain && matchSearch;
+  });
+
+  return (
+    <div className="flex h-full">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Toolbar */}
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-3">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input
+              type="text"
+              placeholder="搜索本体..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
+            />
+          </div>
+          <div className="flex gap-1 overflow-x-auto">
+            {domains.map(d => (
+              <button
+                key={d}
+                onClick={() => setDomainFilter(d)}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap transition-colors",
+                  domainFilter === d ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                )}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setShowCreate(true)} className="ml-auto flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700">
+            <Plus size={14} /> 创建
+          </button>
+        </div>
+
+        {/* Cards Grid */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-3 gap-3">
+            {filtered.map(onto => {
+              const colors = DOMAIN_COLORS[onto.domain || '自定义'] || DOMAIN_COLORS['自定义'];
+              return (
+                <button
+                  key={onto.id}
+                  onClick={() => setSelectedOntology(onto)}
+                  className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-indigo-200 transition-all"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-white", colors.bg)}>
+                      <Box size={14} />
+                    </div>
+                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", colors.light, colors.text)}>{onto.domain}</span>
+                  </div>
+                  <h4 className="font-semibold text-sm text-gray-900 mb-1">{onto.name}</h4>
+                  <p className="text-xs text-gray-500 line-clamp-2">{onto.description}</p>
+                  <div className="flex gap-3 mt-3 text-[10px] text-gray-400">
+                    <span>{onto.attributes.length} 属性</span>
+                    <span>{onto.relations?.length || 0} 关系</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Detail Panel */}
+      {selectedOntology && (
+        <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">本体详情</h3>
+            <button onClick={() => setSelectedOntology(null)} className="p-1 hover:bg-gray-100 rounded"><X size={14} /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white", (DOMAIN_COLORS[selectedOntology.domain || ''] || DOMAIN_COLORS['自定义']).bg)}>
+                <Box size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-gray-900">{selectedOntology.name}</h4>
+                <span className={cn("text-[10px] px-2 py-0.5 rounded-full", (DOMAIN_COLORS[selectedOntology.domain || ''] || DOMAIN_COLORS['自定义']).light, (DOMAIN_COLORS[selectedOntology.domain || ''] || DOMAIN_COLORS['自定义']).text)}>{selectedOntology.domain}</span>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">{selectedOntology.description}</p>
+
+            <div className="mb-4">
+              <h5 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wider">属性列表</h5>
+              <div className="space-y-1">
+                {selectedOntology.attributes.map((attr, i) => (
+                  <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded text-xs">
+                    <span className="w-4 h-4 rounded bg-gray-200 text-gray-600 flex items-center justify-center text-[9px] font-mono">{i + 1}</span>
+                    <span className="font-mono text-gray-700">{attr}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Right: Table Detail */}
-            <div className="flex-1 p-6 overflow-y-auto">
-              {currentTable ? (
-                <div className="max-w-4xl mx-auto">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-900 font-mono">{currentTable.name}</h2>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded">
-                          识别为: {currentTable.recognizedAs}
-                        </span>
-                        <span className="text-xs text-slate-500">置信度: {currentTable.confidence}%</span>
-                        <span className="text-xs text-slate-400">{currentTable.rows.toLocaleString()} 行</span>
-                      </div>
+            {selectedOntology.relations && (
+              <div>
+                <h5 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wider">关系定义</h5>
+                <div className="space-y-1">
+                  {selectedOntology.relations.map((rel, i) => (
+                    <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-indigo-50 rounded text-xs text-indigo-800">
+                      <Link2 size={10} />
+                      {rel}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-sm hover:bg-slate-50 rounded flex items-center gap-2">
-                        <Wand2 size={14} />
-                        自动映射
-                      </button>
-                      <button className="px-3 py-1.5 bg-slate-800 text-white text-sm hover:bg-slate-700 rounded flex items-center gap-2">
-                        <Save size={14} />
-                        保存映射
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Recognition Reasons */}
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6">
-                    <div className="flex items-center gap-2 text-xs text-amber-800">
-                      <Sparkles size={14} />
-                      <span className="font-semibold">识别依据:</span>
-                      {currentTable.reasons.map((r, i) => (
-                        <span key={i}>{r}{i < currentTable.reasons.length - 1 ? '；' : ''}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Fields Table */}
-                  <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-semibold text-slate-700">字段名</th>
-                          <th className="px-4 py-3 text-left font-semibold text-slate-700">类型</th>
-                          <th className="px-4 py-3 text-left font-semibold text-slate-700">注释</th>
-                          <th className="px-4 py-3 text-left font-semibold text-slate-700">映射状态</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {currentTable.fields.map((field, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 font-mono text-slate-900 text-xs">{field.name}</td>
-                            <td className="px-4 py-3 text-slate-600 text-xs">{field.type}</td>
-                            <td className="px-4 py-3 text-slate-500 text-xs">{field.comment}</td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded">
-                                已映射
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400">
-                  <div className="text-center">
-                    <Database size={48} className="mx-auto mb-4 opacity-30" />
-                    <p>选择左侧数据源和表查看详情</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Mapping Tab */}
-        {activeTab === 'mapping' && (
-          <div className="max-w-6xl mx-auto p-6">
-            <div className="grid grid-cols-3 gap-6">
-              {/* Templates */}
-              <div className="bg-white border border-slate-200 rounded-lg">
-                <div className="px-4 py-3 border-b border-slate-200">
-                  <h3 className="font-semibold text-slate-900">映射模板</h3>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      onClick={() => setSelectedTemplate(tpl.id)}
-                      className={cn(
-                        "w-full p-3 text-left hover:bg-slate-50 transition-colors",
-                        selectedTemplate === tpl.id && "bg-sky-50"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <FileText size={16} className="text-slate-500" />
-                        <div>
-                          <div className="text-sm font-medium text-slate-900">{tpl.name}</div>
-                          <div className="text-xs text-slate-500">{tpl.category}</div>
-                        </div>
-                      </div>
-                    </button>
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Template Detail */}
-              <div className="col-span-2">
-                {selectedTemplate ? (
-                  <div className="bg-white border border-slate-200 rounded-lg p-6">
-                    {(() => {
-                      const tpl = TEMPLATES.find(t => t.id === selectedTemplate)!;
-                      return (
-                        <>
-                          <h3 className="text-lg font-bold text-slate-900 mb-4">{tpl.name}</h3>
-                          <div className="bg-slate-900 text-slate-300 p-4 rounded-lg overflow-x-auto mb-6">
-                            <pre className="text-sm font-mono">{tpl.structure}</pre>
-                          </div>
-                          <h4 className="text-sm font-semibold text-slate-700 mb-3">字段映射</h4>
-                          <table className="w-full text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                              <tr>
-                                <th className="px-4 py-2 text-left font-semibold text-slate-700">源字段</th>
-                                <th className="px-4 py-2 text-left font-semibold text-slate-700">目标属性</th>
-                                <th className="px-4 py-2 text-left font-semibold text-slate-700">状态</th>
-                                <th className="px-4 py-2 text-left font-semibold text-slate-700">方式</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {tpl.mappings.map((m, i) => (
-                                <tr key={i} className="hover:bg-slate-50">
-                                  <td className="px-4 py-2 font-mono text-xs text-slate-600">{m.source}</td>
-                                  <td className="px-4 py-2 font-mono text-xs text-slate-900">{m.target}</td>
-                                  <td className="px-4 py-2">
-                                    <span className={cn(
-                                      "px-2 py-0.5 text-xs rounded",
-                                      m.status === 'mapped'
-                                        ? "bg-emerald-100 text-emerald-700"
-                                        : "bg-amber-100 text-amber-700"
-                                    )}>
-                                      {m.status === 'mapped' ? '已映射' : '待映射'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2 text-xs text-slate-500">
-                                    {m.auto ? '自动' : '手动'}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <div className="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-400">
-                    <GitMerge size={48} className="mx-auto mb-4 opacity-30" />
-                    <p>选择左侧模板查看映射详情</p>
-                  </div>
-                )}
+      {/* Create Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowCreate(false)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-96" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-gray-900 mb-4">创建新本体</h3>
+            <div className="space-y-3">
+              <input type="text" placeholder="本体名称" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              <input type="text" placeholder="描述" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              <select className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                <option>选择领域</option>
+                {domains.filter(d => d !== '全部').map(d => <option key={d}>{d}</option>)}
+              </select>
+              <input type="text" placeholder="属性（逗号分隔）" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => setShowCreate(false)} className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">创建</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50">取消</button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-        {/* Ontology Tab */}
-        {activeTab === 'ontology' && (
-          <div className="max-w-6xl mx-auto p-6">
-            <div className="grid grid-cols-1 gap-4">
-              {ONTOLOGY_DOMAINS.map((domain) => (
-                <div key={domain.id} className={cn("bg-white border rounded-lg p-5", domain.color.replace('text-', 'border-').replace('700', '200'))}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <Layers size={20} className={domain.color.split(' ')[1]} />
-                      <div>
-                        <h3 className="font-bold text-slate-900">{domain.name}</h3>
-                        <p className="text-xs text-slate-500">{domain.description}</p>
+/* ============================================================
+   Tab 4: Instance Scenarios
+   ============================================================ */
+function InstancesTab() {
+  const [activeScenario, setActiveScenario] = useState(0);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const scenario = SCENARIOS[activeScenario];
+
+  return (
+    <div className="flex h-full">
+      {/* Left: Scenario List */}
+      <div className="w-64 border-r border-gray-200 bg-gray-50/30 flex flex-col">
+        <div className="p-3 border-b border-gray-200">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">推演场景</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {SCENARIOS.map((sc, i) => (
+            <button
+              key={sc.id}
+              onClick={() => { setActiveScenario(i); setSelectedNode(null); }}
+              className={cn(
+                "w-full text-left p-3 rounded-lg border transition-all",
+                activeScenario === i ? "bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100" : "bg-white border-gray-200 hover:border-indigo-300"
+              )}
+            >
+              <div className="font-medium text-sm text-gray-900">{sc.name}</div>
+              <div className="text-xs text-gray-500 mt-1">{sc.nodes.length} 节点 · {sc.edges.length} 关系</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Middle: Graph */}
+      <div className="flex-1 relative bg-gray-50 overflow-hidden">
+        <div className="absolute top-3 left-3 z-10">
+          <span className="px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600 font-medium">{scenario.name}</span>
+        </div>
+        <svg className="absolute inset-0 w-full h-full">
+          <defs>
+            <marker id="iarrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" />
+            </marker>
+          </defs>
+          {scenario.edges.map((edge, i) => {
+            const s = scenario.nodes.find(n => n.id === edge.source);
+            const t = scenario.nodes.find(n => n.id === edge.target);
+            if (!s || !t) return null;
+            return (
+              <g key={i}>
+                <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="#cbd5e1" strokeWidth={1.5} markerEnd="url(#iarrow)" />
+                <text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 5} textAnchor="middle" fontSize={9} fill="#64748b">{edge.label}</text>
+              </g>
+            );
+          })}
+        </svg>
+        {scenario.nodes.map(node => {
+          const typeColors: Record<string, string> = { '门店': 'bg-blue-500', '会员': 'bg-violet-500', '促销': 'bg-rose-500', '商品': 'bg-emerald-500', '库存': 'bg-amber-500', '订单': 'bg-cyan-500', '供应商': 'bg-orange-500', '质检': 'bg-slate-500', '退货': 'bg-red-500' };
+          return (
+            <button
+              key={node.id}
+              onClick={() => setSelectedNode(node.id)}
+              className={cn(
+                "absolute px-3 py-2 rounded-lg text-white text-xs font-medium shadow-md transition-all",
+                typeColors[node.type] || 'bg-gray-500',
+                selectedNode === node.id && "ring-2 ring-offset-2 ring-gray-400 scale-110"
+              )}
+              style={{ left: node.x - 40, top: node.y - 16 }}
+            >
+              {node.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Right: Node Detail */}
+      <div className="w-72 border-l border-gray-200 bg-white flex flex-col">
+        {selectedNode ? (
+          (() => {
+            const node = scenario.nodes.find(n => n.id === selectedNode);
+            if (!node) return null;
+            const details: Record<string, Record<string, string>> = {
+              'n1': { '类型': '实体门店', 'ID': 'SH-001', '地址': '上海市南京东路800号', '面积': '120㎡', '日均GMV': '¥32,500' },
+              'n2': { '类型': 'VIP会员', 'ID': 'M-12847', '等级': '钻石卡', '积分': '15,680', '最近消费': '2025-06-18' },
+              'n3': { '类型': '满减活动', 'ID': 'PROMO-618-001', '规则': '满200减50', '预算': '¥200万', '参与门店': '300家' },
+              'n4': { '类型': 'SKU', 'ID': 'LYF-001-NUT-500G', '名称': '每日坚果礼盒500g', '售价': '¥128', '成本': '¥72' },
+              'n5': { '类型': '仓库库存', 'ID': 'WH-001-STK', '可用': '12,500件', '安全库存': '3,000件', '状态': '充足' },
+              'n6': { '类型': '销售订单', 'ID': 'SO-1284', '金额': '¥256.00', '时间': '2025-06-18 14:32', '状态': '已完成' },
+            };
+            const info = details[node.id] || {};
+            return (
+              <>
+                <div className="p-4 border-b border-gray-200">
+                  <h3 className="font-semibold text-gray-900">{node.label}</h3>
+                  <span className="text-xs text-gray-500">{node.type}</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="space-y-3">
+                    {Object.entries(info).map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-sm">
+                        <span className="text-gray-500">{k}</span>
+                        <span className="font-medium text-gray-900">{v}</span>
                       </div>
-                    </div>
-                    <span className={cn("px-2 py-1 text-xs font-medium rounded", domain.color.split(' ')[0], domain.color.split(' ')[1])}>
-                      {domain.entities.length} 个实体
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {domain.entities.map((entity) => (
-                      <span
-                        key={entity}
-                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:border-slate-400 transition-colors cursor-pointer"
-                      >
-                        {entity}
-                      </span>
                     ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Instances Tab */}
-        {activeTab === 'instances' && (
-          <div className="max-w-6xl mx-auto p-6">
-            <div className="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-400">
-              <Box size={48} className="mx-auto mb-4 opacity-30" />
-              <p>实例管理功能开发中</p>
-              <p className="text-xs mt-2">将支持门店实例、商品实例、会员实例的CRUD操作</p>
-            </div>
+              </>
+            );
+          })()
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+            <Sparkles size={40} className="mb-3 opacity-30" />
+            <p className="text-sm">点击节点查看实例详情</p>
           </div>
         )}
       </div>
