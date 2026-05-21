@@ -166,7 +166,7 @@ export default function AgentWorkspace() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">智能体总览</h1>
-                <p className="text-sm text-slate-500">来伊份零售决策中台 - 智能体/工具全局运行状态与协同总览</p>
+                <p className="text-sm text-slate-500">零售决策中台 - 智能体/工具全局运行状态与协同总览</p>
               </div>
             </div>
             <div className="flex items-center gap-2">

@@ -129,8 +129,8 @@ export default function RetailApp() {
             <ShoppingBag size={18} />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">来伊份决策中台</h1>
-            <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">LYF Agent OS</p>
+            <h1 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">零售决策中台</h1>
+            <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">Retail Agent OS</p>
           </div>
         </div>
 

@@ -946,7 +946,7 @@ export default function DecisionSpace() {
             </div>
           )}
           <div style={{ fontSize: 11, color: C.grey }}>
-            来伊份零售决策中台
+            零售决策中台
           </div>
         </div>
       </div>

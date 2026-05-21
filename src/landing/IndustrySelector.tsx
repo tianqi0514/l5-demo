@@ -25,7 +25,7 @@ export default function IndustrySelector({ onSelect }: IndustrySelectorProps) {
           AI 智能决策中台
         </h1>
         <p className="text-lg text-gray-500 max-w-xl mx-auto">
-          基于 Palantir 本体论、Skills、MCP 的跨行业 AI 决策平台
+          基于业务语义建模、Skills、MCP 的跨行业 AI 决策平台
         </p>
         <p className="text-sm text-gray-400 mt-2 font-mono">
           Agent Data OS · L1-L5 全栈决策引擎
@@ -59,7 +59,7 @@ export default function IndustrySelector({ onSelect }: IndustrySelectorProps) {
             />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">锂电行业</h2>
-          <p className="text-gray-500 mb-4">中创新航 · 动力电池智能制造</p>
+          <p className="text-gray-500 mb-4">动力电池智能制造</p>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
@@ -106,7 +106,7 @@ export default function IndustrySelector({ onSelect }: IndustrySelectorProps) {
             />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">零售行业</h2>
-          <p className="text-gray-500 mb-4">来伊份 · 休闲食品连锁零售</p>
+          <p className="text-gray-500 mb-4">休闲食品连锁零售</p>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
@@ -132,7 +132,7 @@ export default function IndustrySelector({ onSelect }: IndustrySelectorProps) {
       {/* Footer */}
       <div className="mt-16 text-center text-sm text-gray-400">
         <p>选择行业进入对应决策中台 · 数据相互独立</p>
-        <p className="mt-1 font-mono text-xs">Powered by Palantir Ontology + Skills + MCP</p>
+        <p className="mt-1 font-mono text-xs">Powered by 业务语义建模 + Skills + MCP</p>
       </div>
     </div>
   );
