@@ -31,7 +31,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const industry = detectIndustry(username.trim());
     if (!industry) {
-      setError('用户名错误，请输入"零售"或"锂电"');
+      setError('用户名错误');
       return;
     }
 
@@ -74,7 +74,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   type="text"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setError(''); }}
-                  placeholder="零售 或 锂电"
+                  placeholder="请输入用户名"
                   className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 focus:outline-none transition-all"
                   autoFocus
                 />
