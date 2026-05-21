@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bot, Plus, Search, Settings, Cpu, BrainCircuit, Database, Wrench,
   ShieldCheck, MonitorPlay, FileOutput, ArrowRight, Save, Play, CheckCircle2,
-  Users, Crown, Briefcase, Factory, UserCircle, MapPin, ChevronDown, ChevronUp
+  Users, Crown, Briefcase, Factory, UserCircle, MapPin, ChevronDown, ChevronUp,
+  Network, GitBranch, Layers
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
@@ -186,6 +188,7 @@ export default function AgentStudio() {
   const [isEditing, setIsEditing] = useState(false);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<string[]>(['执行层']);
+  const [resultTab, setResultTab] = useState<'json' | 'graph'>('json');
 
   const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
   const activeRole = ROLE_TEMPLATES.find(r => r.id === activeAgent.roleId);
@@ -865,10 +868,44 @@ export default function AgentStudio() {
 
                 {activeStep === 'result' && (
                   <div className="space-y-4">
-                    <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
-                    <textarea 
-                      className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
-                      defaultValue={`{
+                    {/* Tab Switch */}
+                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+                      <button
+                        onClick={() => setResultTab('json')}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          resultTab === 'json'
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <FileOutput size={12} />
+                          结构化输出
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setResultTab('graph')}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          resultTab === 'graph'
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Network size={12} />
+                          推演知识图谱
+                        </div>
+                      </button>
+                    </div>
+
+                    {resultTab === 'json' && (
+                      <div className="space-y-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
+                        <textarea
+                          className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
+                          defaultValue={`{
   "best_strategy": "string (加班/调线/外包)",
   "confidence_score": "number",
   "kpi_impact": {
@@ -877,13 +914,318 @@ export default function AgentStudio() {
   },
   "reasoning_chain": ["string"]
 }`}
-                    />
+                        />
+                      </div>
+                    )}
+
+                    {resultTab === 'graph' && (
+                      <BatteryReasoningGraph activeAgentId={activeAgentId} />
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 锂电版推演知识图谱组件
+// ============================================================
+
+interface BatteryReasoningNode {
+  id: string;
+  label: string;
+  icon: 'brain' | 'database' | 'arrow' | 'wrench' | 'shield' | 'play' | 'file';
+  skills: string[];
+  dataSources: string[];
+  ontologies: string[];
+  description: string;
+  output?: string;
+}
+
+const BATTERY_REASONING_FLOWS: Record<string, BatteryReasoningNode[]> = {
+  a1: [
+    {
+      id: 'intent', label: '意图解析', icon: 'brain',
+      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
+      description: '解析"Q3产能瓶颈应对"意图，提取时间维度、约束条件、决策目标',
+      output: '意图: 产能优化 | 时间: Q3 | 约束: 准时交付>95%'
+    },
+    {
+      id: 'ontology', label: '本体识别', icon: 'database',
+      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['ProductionLine', 'WorkOrder', 'Equipment', 'Material', 'SalesOrder'],
+      description: '从本体库识别生产相关实体，建立产线-工单-设备-物料关联图谱',
+      output: '识别5个核心本体，建立产线全链路知识图谱'
+    },
+    {
+      id: 'binding', label: '数据绑定', icon: 'arrow',
+      skills: ['data_mapper_v1'], dataSources: ['MES_DB', 'ERP_API', 'SCADA_Stream'],
+      ontologies: ['ProductionLine', 'WorkOrder', 'Equipment'],
+      description: '将本体映射到MES、ERP、SCADA实时数据流，建立参数化查询',
+      output: '绑定3个数据源，覆盖4基地28条产线实时数据'
+    },
+    {
+      id: 'skill', label: '技能调用', icon: 'wrench',
+      skills: ['capacity_planning_v1', 'production_scheduling_v1', 'oee_optimizer_v2'],
+      dataSources: ['MES_DB', 'ERP_API'], ontologies: ['ProductionLine', 'WorkOrder', 'Equipment'],
+      description: '调用产能规划、排程优化、OEE优化技能，并行计算瓶颈分析',
+      output: '瓶颈定位完成：B基地L3产线产能利用率仅78%'
+    },
+    {
+      id: 'constraint', label: '约束注入', icon: 'shield',
+      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['WorkOrder', 'SalesOrder'],
+      description: '应用硬约束（产能利用率>96%，准时交付>95%）和软约束（成本最优）',
+      output: '当前方案不满足约束，需生成替代方案'
+    },
+    {
+      id: 'simulation', label: '推演计算', icon: 'play',
+      skills: ['monte_carlo_v1', 'discrete_event_sim_v1'], dataSources: ['MES_DB', 'Demand_Forecast'],
+      ontologies: ['ProductionLine', 'WorkOrder', 'SalesOrder'],
+      description: '离散事件仿真生成加班/调线/外包三套方案，预测各方案KPI',
+      output: '加班: 成本+8% 准交+3% | 调线: 成本+2% 准交+1% | 外包: 成本+15% 准交+5%'
+    },
+    {
+      id: 'result', label: '结果输出', icon: 'file',
+      skills: ['result_formatter_v1'], dataSources: ['推演结果集'], ontologies: ['WorkOrder', 'SalesOrder'],
+      description: '结构化输出最优方案（调线+部分外包），附带决策依据',
+      output: '推荐调线方案：成本最低且满足交付约束，置信度91%'
+    },
+  ],
+  a2: [
+    {
+      id: 'intent', label: '意图解析', icon: 'brain',
+      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
+      description: '解析"产线设备异常诊断"意图，识别异常类型、设备编号',
+      output: '意图: 异常诊断 | 设备: L3-涂布机-02 | 类型: 温度异常'
+    },
+    {
+      id: 'ontology', label: '本体识别', icon: 'database',
+      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['Equipment', 'ProductionLine', 'QualityCheck', 'Material'],
+      description: '识别设备相关本体，构建设备-工序-质量检测关联图谱',
+      output: '识别4个核心本体，构建设备故障知识图谱'
+    },
+    {
+      id: 'binding', label: '数据绑定', icon: 'arrow',
+      skills: ['data_mapper_v1'], dataSources: ['SCADA_Stream', 'IoT_Sensors', 'Maintenance_DB'],
+      ontologies: ['Equipment', 'ProductionLine'],
+      description: '绑定SCADA实时数据、IoT传感器、维保历史记录',
+      output: '实时数据管道建立，覆盖温度/压力/振动/电流全量传感器'
+    },
+    {
+      id: 'skill', label: '技能调用', icon: 'wrench',
+      skills: ['anomaly_detector_v1', 'root_cause_analyzer_v1', 'predictive_maintenance_v1'],
+      dataSources: ['SCADA_Stream', 'Maintenance_DB'], ontologies: ['Equipment'],
+      description: '调用异常检测、根因分析、预测性维护技能，多维分析故障',
+      output: '检测到温度异常模式，匹配历史故障案例库中的3个相似案例'
+    },
+    {
+      id: 'constraint', label: '约束注入', icon: 'shield',
+      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['Equipment', 'ProductionLine'],
+      description: '应用约束：设备停机时间<4h，维修成本<5万，安全标准',
+      output: '当前故障预计维修时间2h，满足所有约束'
+    },
+    {
+      id: 'simulation', label: '推演计算', icon: 'play',
+      skills: ['impact_simulator_v1'], dataSources: ['MES_DB', 'Schedule_DB'],
+      ontologies: ['ProductionLine', 'WorkOrder'],
+      description: '仿真故障对产线排程的影响，计算调产方案和产能损失',
+      output: '预计产能损失120pcs，可通过调线弥补80%缺口'
+    },
+    {
+      id: 'result', label: '结果输出', icon: 'file',
+      skills: ['result_formatter_v1'], dataSources: ['分析结果集'], ontologies: ['Equipment'],
+      description: '输出故障诊断报告：加热管老化导致温度异常，建议更换',
+      output: '根因: 加热管老化 | 建议: 立即更换 | 预计恢复: 2h'
+    },
+  ],
+  a3: [
+    {
+      id: 'intent', label: '意图解析', icon: 'brain',
+      skills: ['intent_parser_v1'], dataSources: ['用户输入文本'], ontologies: [''],
+      description: '解析"批次质量缺陷追溯"意图，识别批次号、缺陷类型',
+      output: '意图: 质量追溯 | 批次: BT-2024-Q3-8847 | 缺陷: 容量衰减'
+    },
+    {
+      id: 'ontology', label: '本体识别', icon: 'database',
+      skills: ['ontology_resolver_v1'], dataSources: ['本体库'], ontologies: ['Product', 'WorkOrder', 'QualityCheck', 'Material', 'Equipment'],
+      description: '识别质量追溯相关本体，构建产品-工单-质检-物料全链路图谱',
+      output: '识别5个核心本体，构建质量追溯知识图谱'
+    },
+    {
+      id: 'binding', label: '数据绑定', icon: 'arrow',
+      skills: ['data_mapper_v1'], dataSources: ['QMS_DB', 'MES_DB', 'WMS_DB'],
+      ontologies: ['Product', 'WorkOrder', 'QualityCheck'],
+      description: '绑定质量管理系统、MES制造数据、WMS物料数据',
+      output: '数据绑定完成，覆盖该批次全生命周期数据'
+    },
+    {
+      id: 'skill', label: '技能调用', icon: 'wrench',
+      skills: ['traceability_query_v1', 'correlation_analyzer_v1'],
+      dataSources: ['QMS_DB', 'MES_DB'], ontologies: ['Product', 'WorkOrder', 'QualityCheck'],
+      description: '调用追溯查询和关联分析技能，跨工序追踪缺陷源头',
+      output: '追溯完成：定位到负极涂布工序参数偏移'
+    },
+    {
+      id: 'constraint', label: '约束注入', icon: 'shield',
+      skills: ['constraint_checker_v1'], dataSources: ['规则引擎'], ontologies: ['QualityCheck', 'Product'],
+      description: '应用质量约束：CPK>1.33，不良率<0.5%，追溯完整度100%',
+      output: '该批次CPK=1.15，不满足质量约束，触发预警'
+    },
+    {
+      id: 'simulation', label: '推演计算', icon: 'play',
+      skills: ['impact_analyzer_v1'], dataSources: ['QMS_DB', 'Sales_DB'],
+      ontologies: ['Product', 'SalesOrder'],
+      description: '分析缺陷影响范围：同批次产品、同供应商物料、同设备时段',
+      output: '影响范围：同批次200pcs + 同供应商3批次共600pcs'
+    },
+    {
+      id: 'result', label: '结果输出', icon: 'file',
+      skills: ['result_formatter_v1'], dataSources: ['分析结果集'], ontologies: ['Product', 'QualityCheck'],
+      description: '输出质量追溯报告和处置建议：隔离同批次产品，调整工艺参数',
+      output: '建议隔离800pcs产品，调整涂布参数后复测CPK'
+    },
+  ],
+};
+
+const B_ICON_MAP: Record<string, any> = {
+  brain: BrainCircuit, database: Database, arrow: ArrowRight,
+  wrench: Wrench, shield: ShieldCheck, play: MonitorPlay, file: FileOutput,
+};
+
+const B_NODE_COLORS: Record<string, string> = {
+  brain: '#4F46E5', database: '#0891B2', arrow: '#059669',
+  wrench: '#D97706', shield: '#DC2626', play: '#7C3AED', file: '#374151',
+};
+
+function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [activeNodeIdx, setActiveNodeIdx] = useState(0);
+  const nodes = BATTERY_REASONING_FLOWS[activeAgentId] || BATTERY_REASONING_FLOWS.a1;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveNodeIdx(prev => (prev + 1) % nodes.length);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [nodes.length]);
+
+  const nodeHeight = 88;
+  const nodeGap = 32;
+  const startY = 24;
+  const svgWidth = 720;
+  const svgHeight = startY * 2 + nodes.length * nodeHeight + (nodes.length - 1) * nodeGap;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GitBranch size={16} className="text-indigo-600" />
+          <span className="text-sm font-bold text-gray-900">Agent 推演流程图谱</span>
+        </div>
+        <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+      </div>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-x-auto">
+        <svg width={svgWidth} height={svgHeight} className="min-w-[720px]">
+          <defs>
+            <marker id="b-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#9CA3AF" />
+            </marker>
+            <filter id="b-shadow" x="-10%" y="-10%" width="120%" height="130%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.08" />
+            </filter>
+          </defs>
+
+          {nodes.map((_, i) => {
+            if (i === nodes.length - 1) return null;
+            const y1 = startY + i * (nodeHeight + nodeGap) + nodeHeight;
+            const y2 = startY + (i + 1) * (nodeHeight + nodeGap);
+            const isActive = activeNodeIdx >= i;
+            return (
+              <line key={`line-${i}`} x1={svgWidth / 2} y1={y1} x2={svgWidth / 2} y2={y2}
+                stroke={isActive ? '#4F46E5' : '#D1D5DB'} strokeWidth={isActive ? 2.5 : 1.5}
+                markerEnd="url(#b-arrowhead)" className="transition-all duration-500" />
+            );
+          })}
+
+          {nodes.map((node, i) => {
+            const y = startY + i * (nodeHeight + nodeGap);
+            const cx = svgWidth / 2;
+            const isActive = activeNodeIdx === i;
+            const isHovered = hoveredNode === node.id;
+            const color = B_NODE_COLORS[node.icon] || '#4F46E5';
+
+            return (
+              <g key={node.id} transform={`translate(0, ${y})`}
+                onMouseEnter={() => setHoveredNode(node.id)}
+                onMouseLeave={() => setHoveredNode(null)}
+                className="cursor-pointer" style={{ transition: 'all 0.3s' }}>
+                <rect x={40} y={0} width={svgWidth - 80} height={nodeHeight} rx={10}
+                  fill={isActive ? '#FFFFFF' : '#FAFAFA'}
+                  stroke={isActive ? color : isHovered ? '#9CA3AF' : '#E5E7EB'}
+                  strokeWidth={isActive ? 2.5 : 1.5}
+                  filter="url(#b-shadow)" className="transition-all duration-300" />
+                <rect x={40} y={0} width={4} height={nodeHeight} rx={2} fill={color} className="transition-all duration-300" />
+                <circle cx={78} cy={nodeHeight / 2} r={18} fill={isActive ? color : '#F3F4F6'} className="transition-all duration-300" />
+                <circle cx={78} cy={nodeHeight / 2} r={18} fill="transparent" stroke={isActive ? color : '#D1D5DB'} strokeWidth={1.5} className="transition-all duration-300" />
+                <text x={78} y={nodeHeight / 2 + 4} textAnchor="middle" fill={isActive ? '#FFFFFF' : '#6B7280'} fontSize="11" fontWeight="bold" className="transition-all duration-300">
+                  {i + 1}
+                </text>
+                <text x={110} y={22} fill={isActive ? color : '#1F2937'} fontSize="13" fontWeight="bold" className="transition-all duration-300">
+                  {node.label}
+                </text>
+                <text x={110} y={42} fill="#6B7280" fontSize="10">
+                  {node.description.length > 55 ? node.description.slice(0, 55) + '...' : node.description}
+                </text>
+                <text x={110} y={60} fill="#4F46E5" fontSize="9" fontWeight="500">
+                  Skills: {node.skills.slice(0, 2).join(', ')}{node.skills.length > 2 ? '...' : ''}
+                </text>
+
+                {isActive && node.output && (
+                  <g>
+                    <rect x={svgWidth - 220} y={nodeHeight - 28} width={180} height={20} rx={4}
+                      fill="#ECFDF5" stroke="#10B981" strokeWidth={1} />
+                    <text x={svgWidth - 130} y={nodeHeight - 15} textAnchor="middle" fill="#059669" fontSize="8" fontWeight="500">
+                      {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
+                    </text>
+                  </g>
+                )}
+
+                {isHovered && (
+                  <g>
+                    <rect x={svgWidth - 200} y={4} width={160} height={50} rx={6}
+                      fill="#FFFFFF" stroke={color} strokeWidth={1} filter="url(#b-shadow)" />
+                    <text x={svgWidth - 190} y={18} fill="#6B7280" fontSize="8" fontWeight="bold">数据</text>
+                    <text x={svgWidth - 190} y={30} fill="#374151" fontSize="8">{node.dataSources.slice(0, 2).join(', ')}</text>
+                    <text x={svgWidth - 190} y={44} fill="#6B7280" fontSize="8" fontWeight="bold">本体</text>
+                    <text x={svgWidth - 160} y={44} fill="#374151" fontSize="8">{node.ontologies.filter(Boolean).slice(0, 3).join(', ')}</text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: '调用技能', value: `${nodes.reduce((s, n) => s + n.skills.length, 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
+          { label: '推演节点', value: `${nodes.length}步`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+        ].map(stat => (
+          <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+            <div className={`p-1.5 rounded-md ${stat.color}`}><stat.icon size={14} /></div>
+            <div>
+              <div className="text-xs font-bold text-gray-900">{stat.value}</div>
+              <div className="text-[10px] text-gray-500">{stat.label}</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

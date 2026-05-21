@@ -1,20 +1,20 @@
 import { useState } from 'react';
-import IndustrySelector from './landing/IndustrySelector';
+import LoginPage from './components/LoginPage';
 import BatteryApp from './battery/App';
 import RetailApp from './retail/App';
 
-type Industry = null | 'battery' | 'retail';
+type AppState = 'login' | 'battery' | 'retail';
 
 export default function App() {
-  const [industry, setIndustry] = useState<Industry>(null);
+  const [appState, setAppState] = useState<AppState>('login');
 
-  if (industry === 'battery') {
+  if (appState === 'login') {
+    return <LoginPage onLogin={(industry) => setAppState(industry)} />;
+  }
+
+  if (appState === 'battery') {
     return <BatteryApp />;
   }
 
-  if (industry === 'retail') {
-    return <RetailApp />;
-  }
-
-  return <IndustrySelector onSelect={setIndustry} />;
+  return <RetailApp />;
 }

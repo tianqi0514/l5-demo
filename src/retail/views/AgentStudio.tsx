@@ -3,7 +3,8 @@ import {
   Bot, Plus, Search, Settings, Cpu, BrainCircuit, Database, Wrench,
   ShieldCheck, MonitorPlay, FileOutput, ArrowRight, Save, Play, CheckCircle2,
   Users, Crown, Briefcase, Store, UserCircle, MapPin, ChevronDown, ChevronUp,
-  Target, ShoppingCart, Heart, TrendingUp, Package
+  Target, ShoppingCart, Heart, TrendingUp, Package, Network, Zap, BarChart3,
+  AlertTriangle, FileText, GitBranch, Layers
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -172,6 +173,7 @@ export default function AgentStudio() {
   const [isEditing, setIsEditing] = useState(false);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<string[]>(['执行层']);
+  const [resultTab, setResultTab] = useState<'json' | 'graph'>('json');
 
   const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
   const activeRole = ROLE_TEMPLATES.find(r => r.id === activeAgent.roleId);
@@ -779,10 +781,44 @@ export default function AgentStudio() {
 
                 {activeStep === 'result' && (
                   <div className="space-y-4">
-                    <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
-                    <textarea
-                      className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
-                      defaultValue={`{
+                    {/* Tab Switch */}
+                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+                      <button
+                        onClick={() => setResultTab('json')}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          resultTab === 'json'
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <FileOutput size={12} />
+                          结构化输出
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setResultTab('graph')}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          resultTab === 'graph'
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Network size={12} />
+                          推演知识图谱
+                        </div>
+                      </button>
+                    </div>
+
+                    {resultTab === 'json' && (
+                      <div className="space-y-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
+                        <textarea
+                          className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
+                          defaultValue={`{
   "best_strategy": "string (方案A/方案B/方案C)",
   "confidence_score": "number",
   "kpi_impact": {
@@ -792,13 +828,518 @@ export default function AgentStudio() {
   },
   "reasoning_chain": ["string"]
 }`}
-                    />
+                        />
+                      </div>
+                    )}
+
+                    {resultTab === 'graph' && (
+                      <AgentReasoningGraph activeAgentId={activeAgentId} />
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 推演知识图谱组件 - 展示Agent完整推演流程
+// ============================================================
+
+interface ReasoningNode {
+  id: string;
+  label: string;
+  icon: 'brain' | 'database' | 'arrow' | 'wrench' | 'shield' | 'play' | 'file';
+  skills: string[];
+  dataSources: string[];
+  ontologies: string[];
+  description: string;
+  output?: string;
+}
+
+const REASONING_FLOWS: Record<string, ReasoningNode[]> = {
+  a1: [
+    {
+      id: 'intent',
+      label: '意图解析',
+      icon: 'brain',
+      skills: ['intent_parser_v1'],
+      dataSources: ['用户输入文本'],
+      ontologies: [''],
+      description: '解析"华东区夏季选品优化"意图，提取区域范围、季节维度、优化目标',
+      output: '意图: 选品优化 | 区域: 华东 | 季节: 夏季'
+    },
+    {
+      id: 'ontology',
+      label: '本体识别',
+      icon: 'database',
+      skills: ['ontology_resolver_v1'],
+      dataSources: ['本体库'],
+      ontologies: ['Product', 'SKU', 'Category', 'SalesOrder', 'Store'],
+      description: '从本体库中识别与选品优化相关的业务实体，建立实体关联关系',
+      output: '识别5个核心本体，建立Product→Category→SalesOrder关联链'
+    },
+    {
+      id: 'binding',
+      label: '数据绑定',
+      icon: 'arrow',
+      skills: ['data_mapper_v1'],
+      dataSources: ['POS_Sales_DB', 'ERP_Store_API', 'Inventory_System'],
+      ontologies: ['Store', 'SalesOrder', 'Inventory'],
+      description: '将本体实体映射到实际数据源，参数化SQL/API查询',
+      output: '生成3个数据查询任务，覆盖华东区156家门店'
+    },
+    {
+      id: 'skill',
+      label: '技能调用',
+      icon: 'wrench',
+      skills: ['product_selection_v1', 'sales_analysis_v1', 'margin_calculation_v1'],
+      dataSources: ['POS_Sales_DB', 'Inventory_System'],
+      ontologies: ['Product', 'SKU', 'Category'],
+      description: '调用选品、销售分析、毛利计算技能，并行执行数据处理',
+      output: 'SKU级销售分析完成，筛选出TOP200候选商品'
+    },
+    {
+      id: 'constraint',
+      label: '约束注入',
+      icon: 'shield',
+      skills: ['constraint_checker_v1'],
+      dataSources: ['规则引擎'],
+      ontologies: ['Product', 'Category'],
+      description: '应用硬约束（选品通过率>85%, 毛利率>35%）和软约束（新品占比20%）',
+      output: '过滤后剩余87个SKU，全部满足约束条件'
+    },
+    {
+      id: 'simulation',
+      label: '推演计算',
+      icon: 'play',
+      skills: ['monte_carlo_v1', 'scenario_generator_v1'],
+      dataSources: ['POS_Sales_DB', 'Member_System'],
+      ontologies: ['SalesOrder', 'Member', 'Store'],
+      description: '蒙特卡洛仿真生成A/B/C三套选品方案，预测各方案的GMV、毛利率、坪效',
+      output: '方案A: GMV+12% | 方案B: GMV+8% 毛利+3% | 方案C: GMV+15% 毛利-2%'
+    },
+    {
+      id: 'result',
+      label: '结果输出',
+      icon: 'file',
+      skills: ['result_formatter_v1'],
+      dataSources: ['推演结果集'],
+      ontologies: ['Product', 'SalesOrder'],
+      description: '结构化输出最优方案（方案B），附带决策依据和可复用规则',
+      output: '推荐方案B：平衡GMV增长与毛利率，置信度87%'
+    },
+  ],
+  a2: [
+    {
+      id: 'intent',
+      label: '意图解析',
+      icon: 'brain',
+      skills: ['intent_parser_v1'],
+      dataSources: ['用户输入文本'],
+      ontologies: [''],
+      description: '解析"门店日销异常预警"意图，识别异常类型、预警级别',
+      output: '意图: 异常预警 | 类型: 日销下降 | 级别: 紧急'
+    },
+    {
+      id: 'ontology',
+      label: '本体识别',
+      icon: 'database',
+      skills: ['ontology_resolver_v1'],
+      dataSources: ['本体库'],
+      ontologies: ['Store', 'SalesOrder', 'POSTransaction', 'Member', 'Inventory'],
+      description: '识别门店运营相关本体实体，建立Store→POS→SalesOrder→Member关联',
+      output: '识别5个核心本体，构建门店运营知识图谱'
+    },
+    {
+      id: 'binding',
+      label: '数据绑定',
+      icon: 'arrow',
+      skills: ['data_mapper_v1'],
+      dataSources: ['POS_Stream', 'Member_System', 'Inventory_RealTime'],
+      ontologies: ['Store', 'SalesOrder', 'Member'],
+      description: '绑定实时POS流水、会员数据、库存数据，建立实时数据管道',
+      output: '实时数据管道建立，延迟<3秒'
+    },
+    {
+      id: 'skill',
+      label: '技能调用',
+      icon: 'wrench',
+      skills: ['store_ops_v1', 'daily_report_v1', 'exception_alert_v1'],
+      dataSources: ['POS_Stream', 'Store_Mgmt_DB'],
+      ontologies: ['Store', 'SalesOrder'],
+      description: '调用门店运营监控技能，执行日销对比、同环比分析、异常检测',
+      output: '检测到3家门店日销下降超20%'
+    },
+    {
+      id: 'constraint',
+      label: '约束注入',
+      icon: 'shield',
+      skills: ['constraint_checker_v1'],
+      dataSources: ['规则引擎'],
+      ontologies: ['Store', 'SalesOrder'],
+      description: '应用约束条件：日销目标达成率>90%，客单价>35元',
+      output: '2家门店触发硬约束，1家触发软约束'
+    },
+    {
+      id: 'simulation',
+      label: '推演计算',
+      icon: 'play',
+      skills: ['root_cause_analyzer_v1', 'attribution_model_v1'],
+      dataSources: ['POS_Stream', 'Weather_API', 'Competitor_Data'],
+      ontologies: ['Store', 'SalesOrder', 'Member'],
+      description: '多维度异常根因分析：天气因素、竞品促销、人员排班、库存缺货',
+      output: '根因: 竞品促销(45%) + 库存缺货(30%) + 天气(25%)'
+    },
+    {
+      id: 'result',
+      label: '结果输出',
+      icon: 'file',
+      skills: ['result_formatter_v1'],
+      dataSources: ['分析结果集'],
+      ontologies: ['Store', 'SalesOrder'],
+      description: '生成异常诊断报告，输出处理建议：补货+竞品应对+促销方案',
+      output: '3项处理建议，预计2日内恢复日销目标'
+    },
+  ],
+  a3: [
+    {
+      id: 'intent',
+      label: '意图解析',
+      icon: 'brain',
+      skills: ['intent_parser_v1'],
+      dataSources: ['用户输入文本'],
+      ontologies: [''],
+      description: '解析"高价值会员流失预警"意图，识别会员分层标准、流失定义',
+      output: '意图: 流失预警 | 分层: 高价值 | 流失定义: 30天未消费'
+    },
+    {
+      id: 'ontology',
+      label: '本体识别',
+      icon: 'database',
+      skills: ['ontology_resolver_v1'],
+      dataSources: ['本体库'],
+      ontologies: ['Member', 'Promotion', 'Coupon', 'SalesOrder', 'LoyaltyProgram'],
+      description: '识别会员运营相关本体，建立Member→SalesOrder→Promotion关联链',
+      output: '识别5个核心本体，构建会员洞察知识图谱'
+    },
+    {
+      id: 'binding',
+      label: '数据绑定',
+      icon: 'arrow',
+      skills: ['data_mapper_v1'],
+      dataSources: ['Member_System', 'CRM_DB', 'Sales_History'],
+      ontologies: ['Member', 'SalesOrder'],
+      description: '绑定会员画像、消费历史、互动记录，构建360°会员视图',
+      output: '覆盖全量会员数据，共计2.3M会员档案'
+    },
+    {
+      id: 'skill',
+      label: '技能调用',
+      icon: 'wrench',
+      skills: ['member_segmentation_v1', 'churn_prediction_v1'],
+      dataSources: ['Member_System', 'Sales_History'],
+      ontologies: ['Member', 'SalesOrder'],
+      description: '调用会员分群和流失预测技能，RFM分群+XGBoost预测模型',
+      output: 'RFM分群完成，识别高价值会员12,400人'
+    },
+    {
+      id: 'constraint',
+      label: '约束注入',
+      icon: 'shield',
+      skills: ['constraint_checker_v1'],
+      dataSources: ['规则引擎'],
+      ontologies: ['Member', 'LoyaltyProgram'],
+      description: '应用约束：会员增长率>10%，复购率>35%，LTV>2000元',
+      output: '流失风险会员中，需优先干预8,600人'
+    },
+    {
+      id: 'simulation',
+      label: '推演计算',
+      icon: 'play',
+      skills: ['scenario_generator_v1', 'campaign_optimizer_v1'],
+      dataSources: ['Member_System', 'Promotion_DB'],
+      ontologies: ['Member', 'Promotion', 'Coupon'],
+      description: '仿真不同挽回策略效果：专属优惠券、生日礼、积分翻倍、到店礼遇',
+      output: '策略A(专属券): 挽回率32% | 策略B(到店礼): 挽回率28%'
+    },
+    {
+      id: 'result',
+      label: '结果输出',
+      icon: 'file',
+      skills: ['result_formatter_v1'],
+      dataSources: ['推演结果集'],
+      ontologies: ['Member', 'Promotion'],
+      description: '输出流失风险名单和精准营销方案，附带ROI预测和触达渠道建议',
+      output: '推荐策略A，预计挽回2,752人，ROI 1:4.3'
+    },
+  ],
+};
+
+const ICON_MAP: Record<string, any> = {
+  brain: BrainCircuit,
+  database: Database,
+  arrow: ArrowRight,
+  wrench: Wrench,
+  shield: ShieldCheck,
+  play: MonitorPlay,
+  file: FileOutput,
+};
+
+const NODE_COLORS: Record<string, string> = {
+  brain: '#4F46E5',
+  database: '#0891B2',
+  arrow: '#059669',
+  wrench: '#D97706',
+  shield: '#DC2626',
+  play: '#7C3AED',
+  file: '#374151',
+};
+
+function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [activeNodeIdx, setActiveNodeIdx] = useState(0);
+  const nodes = REASONING_FLOWS[activeAgentId] || REASONING_FLOWS.a1;
+
+  // 自动播放动画
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveNodeIdx(prev => (prev + 1) % nodes.length);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [nodes.length]);
+
+  const nodeHeight = 88;
+  const nodeGap = 32;
+  const startY = 24;
+  const svgWidth = 720;
+  const svgHeight = startY * 2 + nodes.length * nodeHeight + (nodes.length - 1) * nodeGap;
+
+  return (
+    <div className="space-y-4">
+      {/* 头部信息 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GitBranch size={16} className="text-indigo-600" />
+          <span className="text-sm font-bold text-gray-900">Agent 推演流程图谱</span>
+        </div>
+        <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+      </div>
+
+      {/* SVG 流程图 */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-x-auto">
+        <svg width={svgWidth} height={svgHeight} className="min-w-[720px]">
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#9CA3AF" />
+            </marker>
+            <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.08" />
+            </filter>
+          </defs>
+
+          {/* 连接线 */}
+          {nodes.map((_, i) => {
+            if (i === nodes.length - 1) return null;
+            const y1 = startY + i * (nodeHeight + nodeGap) + nodeHeight;
+            const y2 = startY + (i + 1) * (nodeHeight + nodeGap);
+            const isActive = activeNodeIdx >= i;
+            return (
+              <line
+                key={`line-${i}`}
+                x1={svgWidth / 2}
+                y1={y1}
+                x2={svgWidth / 2}
+                y2={y2}
+                stroke={isActive ? '#4F46E5' : '#D1D5DB'}
+                strokeWidth={isActive ? 2.5 : 1.5}
+                markerEnd="url(#arrowhead)"
+                className="transition-all duration-500"
+              />
+            );
+          })}
+
+          {/* 节点 */}
+          {nodes.map((node, i) => {
+            const y = startY + i * (nodeHeight + nodeGap);
+            const cx = svgWidth / 2;
+            const isActive = activeNodeIdx === i;
+            const isHovered = hoveredNode === node.id;
+            const color = NODE_COLORS[node.icon] || '#4F46E5';
+            const Icon = ICON_MAP[node.icon] || BrainCircuit;
+
+            return (
+              <g
+                key={node.id}
+                transform={`translate(0, ${y})`}
+                onMouseEnter={() => setHoveredNode(node.id)}
+                onMouseLeave={() => setHoveredNode(null)}
+                className="cursor-pointer"
+                style={{ transition: 'all 0.3s' }}
+              >
+                {/* 节点卡片背景 */}
+                <rect
+                  x={40}
+                  y={0}
+                  width={svgWidth - 80}
+                  height={nodeHeight}
+                  rx={10}
+                  fill={isActive ? '#FFFFFF' : '#FAFAFA'}
+                  stroke={isActive ? color : isHovered ? '#9CA3AF' : '#E5E7EB'}
+                  strokeWidth={isActive ? 2.5 : 1.5}
+                  filter="url(#shadow)"
+                  className="transition-all duration-300"
+                />
+
+                {/* 左侧彩色条 */}
+                <rect
+                  x={40}
+                  y={0}
+                  width={4}
+                  height={nodeHeight}
+                  rx={2}
+                  fill={color}
+                  className="transition-all duration-300"
+                />
+
+                {/* 图标圆圈 */}
+                <circle
+                  cx={78}
+                  cy={nodeHeight / 2}
+                  r={18}
+                  fill={isActive ? color : '#F3F4F6'}
+                  className="transition-all duration-300"
+                />
+
+                {/* 步骤序号 */}
+                <circle
+                  cx={78}
+                  cy={nodeHeight / 2}
+                  r={18}
+                  fill="transparent"
+                  stroke={isActive ? color : '#D1D5DB'}
+                  strokeWidth={1.5}
+                  className="transition-all duration-300"
+                />
+                <text
+                  x={78}
+                  y={nodeHeight / 2 + 4}
+                  textAnchor="middle"
+                  fill={isActive ? '#FFFFFF' : '#6B7280'}
+                  fontSize="11"
+                  fontWeight="bold"
+                  className="transition-all duration-300"
+                >
+                  {i + 1}
+                </text>
+
+                {/* 节点标题 */}
+                <text
+                  x={110}
+                  y={22}
+                  fill={isActive ? color : '#1F2937'}
+                  fontSize="13"
+                  fontWeight="bold"
+                  className="transition-all duration-300"
+                >
+                  {node.label}
+                </text>
+
+                {/* 节点描述 */}
+                <text
+                  x={110}
+                  y={42}
+                  fill="#6B7280"
+                  fontSize="10"
+                >
+                  {node.description.length > 55 ? node.description.slice(0, 55) + '...' : node.description}
+                </text>
+
+                {/* Skills标签 */}
+                <text
+                  x={110}
+                  y={60}
+                  fill="#4F46E5"
+                  fontSize="9"
+                  fontWeight="500"
+                >
+                  Skills: {node.skills.slice(0, 2).join(', ')}{node.skills.length > 2 ? '...' : ''}
+                </text>
+
+                {/* 输出结果 */}
+                {isActive && node.output && (
+                  <g>
+                    <rect
+                      x={svgWidth - 220}
+                      y={nodeHeight - 28}
+                      width={180}
+                      height={20}
+                      rx={4}
+                      fill="#ECFDF5"
+                      stroke="#10B981"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={svgWidth - 130}
+                      y={nodeHeight - 15}
+                      textAnchor="middle"
+                      fill="#059669"
+                      fontSize="8"
+                      fontWeight="500"
+                    >
+                      {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
+                    </text>
+                  </g>
+                )}
+
+                {/* 悬停时的详细数据 */}
+                {isHovered && (
+                  <g>
+                    <rect
+                      x={svgWidth - 200}
+                      y={4}
+                      width={160}
+                      height={50}
+                      rx={6}
+                      fill="#FFFFFF"
+                      stroke={color}
+                      strokeWidth={1}
+                      filter="url(#shadow)"
+                    />
+                    <text x={svgWidth - 190} y={18} fill="#6B7280" fontSize="8" fontWeight="bold">数据</text>
+                    <text x={svgWidth - 190} y={30} fill="#374151" fontSize="8">{node.dataSources.slice(0, 2).join(', ')}</text>
+                    <text x={svgWidth - 190} y={44} fill="#6B7280" fontSize="8" fontWeight="bold">本体</text>
+                    <text x={svgWidth - 160} y={44} fill="#374151" fontSize="8">{node.ontologies.filter(Boolean).slice(0, 3).join(', ')}</text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* 底部统计 */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: '调用技能', value: `${nodes.reduce((s, n) => s + n.skills.length, 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
+          { label: '推演节点', value: `${nodes.length}步`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+        ].map(stat => (
+          <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+            <div className={`p-1.5 rounded-md ${stat.color}`}>
+              <stat.icon size={14} />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-gray-900">{stat.value}</div>
+              <div className="text-[10px] text-gray-500">{stat.label}</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
