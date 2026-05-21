@@ -3,7 +3,7 @@ import {
   Bot, Plus, Search, Settings, Cpu, BrainCircuit, Database, Wrench,
   ShieldCheck, MonitorPlay, FileOutput, ArrowRight, Save, Play, CheckCircle2,
   Users, Crown, Briefcase, Factory, UserCircle, MapPin, ChevronDown, ChevronUp,
-  Network, GitBranch, Layers
+  Network, GitBranch, Layers, X, ZoomIn, ZoomOut, Maximize2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
@@ -188,6 +188,8 @@ export default function AgentStudio() {
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<string[]>(['执行层']);
   const [resultTab, setResultTab] = useState<'json' | 'graph'>('json');
+  const [showGraphModal, setShowGraphModal] = useState(false);
+  const [graphZoom, setGraphZoom] = useState(1);
 
   const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
   const activeRole = ROLE_TEMPLATES.find(r => r.id === activeAgent.roleId);
@@ -867,6 +869,15 @@ export default function AgentStudio() {
 
                 {activeStep === 'result' && (
                   <div className="space-y-4">
+                    {/* 预览推演过程按钮 */}
+                    <button
+                      onClick={() => setShowGraphModal(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md"
+                    >
+                      <Maximize2 size={16} />
+                      <span className="text-sm font-semibold">预览推演过程</span>
+                    </button>
+
                     {/* Tab Switch */}
                     <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
                       <button
@@ -927,6 +938,70 @@ export default function AgentStudio() {
           </div>
         </div>
       </div>
+
+      {/* 推演过程预览模态框 */}
+      {showGraphModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowGraphModal(false)}
+          />
+          <div className="relative z-10 w-[95vw] h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* 头部 */}
+            <div className="h-14 flex items-center justify-between px-5 border-b border-gray-200 bg-gray-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <Network size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">推演过程预览</h3>
+                  <p className="text-[10px] text-gray-500">{activeAgent.name} · 知识图谱推演流程</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* 缩放控制 */}
+                <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setGraphZoom(z => Math.max(0.5, z - 0.15))}
+                    className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                    title="缩小"
+                  >
+                    <ZoomOut size={14} />
+                  </button>
+                  <span className="text-[10px] font-mono text-gray-500 w-10 text-center">{Math.round(graphZoom * 100)}%</span>
+                  <button
+                    onClick={() => setGraphZoom(z => Math.min(2, z + 0.15))}
+                    className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                    title="放大"
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowGraphModal(false)}
+                  className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 hover:text-gray-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* 图谱区域 */}
+            <div className="flex-1 overflow-auto bg-gray-50 p-4 flex items-center justify-center">
+              <div
+                style={{
+                  transform: `scale(${graphZoom})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.2s ease',
+                }}
+                className="w-full h-full flex items-center justify-center"
+              >
+                <BatteryReasoningGraph activeAgentId={activeAgentId} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

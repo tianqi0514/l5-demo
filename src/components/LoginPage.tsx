@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
-import { Cpu, LogIn, AlertCircle, Eye, EyeOff, User } from 'lucide-react';
+import { Cpu, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface LoginPageProps {
   onLogin: (industry: 'battery' | 'retail') => void;
 }
 
-const RETAIL_KEYWORDS = ['retail', '零售', '来伊份', 'lyf', 'store', '门店', '零食', 'snack'];
-const BATTERY_KEYWORDS = ['battery', '锂电', '中创', 'cxa', 'lithium', 'cell', '电芯', '新能源'];
-
 function detectIndustry(username: string): 'battery' | 'retail' | null {
-  const lower = username.toLowerCase();
-  if (RETAIL_KEYWORDS.some(k => lower.includes(k.toLowerCase()))) return 'retail';
-  if (BATTERY_KEYWORDS.some(k => lower.includes(k.toLowerCase()))) return 'battery';
+  const lower = username.trim();
+  if (lower === '零售') return 'retail';
+  if (lower === '锂电') return 'battery';
   return null;
 }
 
@@ -34,7 +31,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const industry = detectIndustry(username.trim());
     if (!industry) {
-      setError('无法识别账户类型。用户名请包含"零售/来伊份"或"锂电/中创"相关关键字');
+      setError('用户名错误，请输入"零售"或"锂电"');
       return;
     }
 
@@ -54,14 +51,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gray-900 mb-4">
             <Cpu size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">AI 决策中台</h1>
-          <p className="text-sm text-gray-500 mt-1">Agent Data OS · 智能体驱动的业务决策系统</p>
+          <p className="text-sm text-gray-500 mt-1">Agent Data OS</p>
         </div>
 
         {/* Login Card */}
@@ -77,21 +74,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   type="text"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setError(''); }}
-                  placeholder="请输入用户名"
+                  placeholder="零售 或 锂电"
                   className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 focus:outline-none transition-all"
                   autoFocus
                 />
                 {detected && (
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-                    <span className="text-gray-400">检测到账户类型：</span>
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-full font-medium",
-                      detected === 'retail'
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-blue-100 text-blue-700"
-                    )}>
-                      <span className="flex items-center gap-1"><User size={10} /> 已识别</span>
-                    </span>
+                  <div className="mt-1.5 text-xs text-gray-400">
+                    账户类型已识别
                   </div>
                 )}
               </div>
@@ -138,34 +127,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </button>
             </form>
           </div>
-
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
-            <p className="text-xs text-gray-400 text-center">提示：用户名包含"零售/来伊份"或"锂电/中创"关键字即可识别账户。密码均为 123456。</p>
-          </div>
-        </div>
-
-        {/* Demo accounts */}
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button
-            onClick={() => { setUsername('retail_admin'); setPassword('123456'); setError(''); }}
-            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <User size={14} className="text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">账户 1</span>
-            </div>
-            <p className="text-[10px] text-gray-400">retail_admin / 123456</p>
-          </button>
-          <button
-            onClick={() => { setUsername('battery_admin'); setPassword('123456'); setError(''); }}
-            className="p-3 bg-white border border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <User size={14} className="text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">账户 2</span>
-            </div>
-            <p className="text-[10px] text-gray-400">battery_admin / 123456</p>
-          </button>
         </div>
       </div>
     </div>
