@@ -929,7 +929,7 @@ export default function AgentStudio() {
             </div>
 
             {/* Modal Body - Graph */}
-            <div className="flex-1 overflow-hidden bg-gray-50/50">
+            <div className="flex-1 overflow-hidden bg-gray-50/50 p-3">
               <BatteryReasoningGraph activeAgentId={activeAgentId} />
             </div>
           </div>
@@ -1386,18 +1386,36 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const lastMouseRef = React.useRef<{ x: number; y: number } | null>(null);
   const [cursorStyle, setCursorStyle] = React.useState('grab');
 
-  const CSS_W = 840;
-  const CSS_H = 640;
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = React.useState({ w: 1400, h: 900 });
+
+  // Measure container size
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const cr = entry.contentRect;
+        setContainerSize({ w: cr.width, h: cr.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Build simulation graph when agent changes
   React.useEffect(() => {
     const sim = buildSimGraph(activeAgentId);
-    // Initialize positions around center with random spread
-    const cx = CSS_W / 2;
-    const cy = CSS_H / 2;
-    for (const n of sim.nodes) {
-      n.x = cx + (Math.random() - 0.5) * 200;
-      n.y = cy + (Math.random() - 0.5) * 200;
+    // Initialize positions around center with larger spread
+    const cx = containerSize.w / 2;
+    const cy = containerSize.h / 2;
+    const count = sim.nodes.length;
+    for (let i = 0; i < sim.nodes.length; i++) {
+      const n = sim.nodes[i];
+      const angle = (i / count) * Math.PI * 2;
+      const radius = Math.min(containerSize.w, containerSize.h) * 0.38;
+      n.x = cx + Math.cos(angle) * radius;
+      n.y = cy + Math.sin(angle) * radius;
       n.vx = 0;
       n.vy = 0;
       n.pinned = false;
@@ -1428,15 +1446,15 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     const nodes = sim.nodes;
     const edges = sim.edges;
-    const kRepulse = 150;
-    const kSpring = 0.05;
-    const kCenter = 0.01;
-    const idealLength = 120;
-    const cx = CSS_W / 2;
-    const cy = CSS_H / 2;
+    const kRepulse = 2500;
+    const kSpring = 0.006;
+    const kCenter = 0.002;
+    const idealLength = 220;
+    const cx = containerSize.w / 2;
+    const cy = containerSize.h / 2;
 
     // Temperature (cooling)
-    const temp = Math.max(0.01, 1 - frameCountRef.current / 300);
+    const temp = Math.max(0.01, 1 - frameCountRef.current / 600);
 
     // Repulsion (Coulomb)
     for (let i = 0; i < nodes.length; i++) {
@@ -1446,7 +1464,9 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (kRepulse * a.mass * b.mass) / (dist * dist);
+        const minDist = (a.width + a.height + b.width + b.height) / 4 + 50;
+        const effectiveDist = Math.max(dist, minDist);
+        const force = (kRepulse * a.mass * b.mass) / (effectiveDist * effectiveDist);
         const fx = (dx / dist) * force * temp;
         const fy = (dy / dist) * force * temp;
         if (!a.pinned) { a.vx -= fx / a.mass; a.vy -= fy / a.mass; }
@@ -1480,8 +1500,8 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     let totalVelocity = 0;
     for (const n of nodes) {
       if (n.pinned) continue;
-      n.vx *= 0.9;
-      n.vy *= 0.9;
+      n.vx *= 0.85;
+      n.vy *= 0.85;
       n.x += n.vx;
       n.y += n.vy;
       totalVelocity += Math.sqrt(n.vx * n.vx + n.vy * n.vy);
@@ -1490,7 +1510,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     frameCountRef.current++;
 
     // Convergence check
-    if (frameCountRef.current > 300 || totalVelocity < 0.5) {
+    if (frameCountRef.current > 600 || totalVelocity < 0.05) {
       convergedRef.current = true;
     }
   }, []);
@@ -1503,17 +1523,17 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = CSS_W * dpr;
-    canvas.height = CSS_H * dpr;
-    canvas.style.width = CSS_W + 'px';
-    canvas.style.height = CSS_H + 'px';
+    canvas.width = containerSize.w * dpr;
+    canvas.height = containerSize.h * dpr;
+    canvas.style.width = containerSize.w + 'px';
+    canvas.style.height = containerSize.h + 'px';
     ctx.scale(dpr, dpr);
 
     const toScreen = (wx: number, wy: number) => {
       const v = viewRef.current;
       return {
-        x: (wx - CSS_W / 2) * v.zoom + CSS_W / 2 + v.panX,
-        y: (wy - CSS_H / 2) * v.zoom + CSS_H / 2 + v.panY,
+        x: (wx - containerSize.w / 2) * v.zoom + containerSize.w / 2 + v.panX,
+        y: (wy - containerSize.h / 2) * v.zoom + containerSize.h / 2 + v.panY,
       };
     };
 
@@ -1552,7 +1572,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
       // Clear background
       ctx.fillStyle = '#F8FAFC';
-      ctx.fillRect(0, 0, CSS_W, CSS_H);
+      ctx.fillRect(0, 0, containerSize.w, containerSize.h);
 
       // Dot grid background
       ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
@@ -1560,8 +1580,8 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       const dotOffsetX = ((v.panX % dotSpacing) + dotSpacing) % dotSpacing;
       const dotOffsetY = ((v.panY % dotSpacing) + dotSpacing) % dotSpacing;
       const dotR = Math.max(0.5, 0.6 * v.zoom);
-      for (let gx = dotOffsetX; gx < CSS_W; gx += dotSpacing) {
-        for (let gy = dotOffsetY; gy < CSS_H; gy += dotSpacing) {
+      for (let gx = dotOffsetX; gx < containerSize.w; gx += dotSpacing) {
+        for (let gy = dotOffsetY; gy < containerSize.h; gy += dotSpacing) {
           ctx.beginPath();
           ctx.arc(gx, gy, dotR, 0, Math.PI * 2);
           ctx.fill();
@@ -1784,14 +1804,14 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     render();
     return () => cancelAnimationFrame(animationRef.current);
-  }, [stepSimulation]);
+  }, [stepSimulation, containerSize.w, containerSize.h]);
 
   // Mouse event handlers
   const getMouseWorldPos = (mx: number, my: number) => {
     const v = viewRef.current;
     return {
-      x: (mx - CSS_W / 2 - v.panX) / v.zoom + CSS_W / 2,
-      y: (my - CSS_H / 2 - v.panY) / v.zoom + CSS_H / 2,
+      x: (mx - containerSize.w / 2 - v.panX) / v.zoom + containerSize.w / 2,
+      y: (my - containerSize.h / 2 - v.panY) / v.zoom + containerSize.h / 2,
     };
   };
 
@@ -1802,8 +1822,8 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     for (let i = sim.nodes.length - 1; i >= 0; i--) {
       const n = sim.nodes[i];
       const pos = {
-        x: (n.x - CSS_W / 2) * v.zoom + CSS_W / 2 + v.panX,
-        y: (n.y - CSS_H / 2) * v.zoom + CSS_H / 2 + v.panY,
+        x: (n.x - containerSize.w / 2) * v.zoom + containerSize.w / 2 + v.panX,
+        y: (n.y - containerSize.h / 2) * v.zoom + containerSize.h / 2 + v.panY,
       };
       const nw = n.width * v.zoom;
       const nh = n.height * v.zoom;
@@ -1888,10 +1908,10 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
     let newZoom = oldZoom * zoomFactor;
     newZoom = Math.max(0.3, Math.min(3, newZoom));
-    const worldX = (mx - CSS_W / 2 - v.panX) / oldZoom + CSS_W / 2;
-    const worldY = (my - CSS_H / 2 - v.panY) / oldZoom + CSS_H / 2;
-    v.panX = mx - CSS_W / 2 - (worldX - CSS_W / 2) * newZoom;
-    v.panY = my - CSS_H / 2 - (worldY - CSS_H / 2) * newZoom;
+    const worldX = (mx - containerSize.w / 2 - v.panX) / oldZoom + containerSize.w / 2;
+    const worldY = (my - containerSize.h / 2 - v.panY) / oldZoom + containerSize.h / 2;
+    v.panX = mx - containerSize.w / 2 - (worldX - containerSize.w / 2) * newZoom;
+    v.panY = my - containerSize.h / 2 - (worldY - containerSize.h / 2) * newZoom;
     v.targetZoom = newZoom;
   };
 
@@ -1922,8 +1942,8 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const totalNodes = sim ? sim.nodes.length : 0;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full gap-2">
+      <div className="flex items-center justify-between shrink-0 px-1">
         <div className="flex items-center gap-2">
           <GitBranch size={16} className="text-indigo-600" />
           <span className="text-sm font-bold text-gray-900">Agent 推演知识图谱</span>
@@ -1942,7 +1962,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         </div>
       </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden relative" style={{ height: CSS_H }}>
+      <div ref={containerRef} className="flex-1 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden relative min-h-0">
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -1951,7 +1971,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           onMouseLeave={handleMouseLeave}
           onWheel={handleWheel}
           onDoubleClick={handleDoubleClick}
-          style={{ width: CSS_W, height: CSS_H, cursor: cursorStyle }}
+          style={{ width: '100%', height: '100%', cursor: cursorStyle }}
         />
 
         {/* Tooltip */}
@@ -1959,7 +1979,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           <div
             className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-3 pointer-events-none"
             style={{
-              left: Math.min(tooltipPos.x, CSS_W - 300),
+              left: Math.min(tooltipPos.x, containerSize.w - 300),
               top: Math.max(tooltipPos.y - 80, 4),
               maxWidth: 280,
             }}

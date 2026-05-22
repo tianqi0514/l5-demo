@@ -844,7 +844,7 @@ export default function AgentStudio() {
             </div>
 
             {/* Modal Body - Graph */}
-            <div className="flex-1 overflow-hidden bg-gray-50/50">
+            <div className="flex-1 overflow-hidden bg-gray-50/50 p-3">
               <AgentReasoningGraph activeAgentId={activeAgentId} />
             </div>
           </div>
@@ -1128,7 +1128,7 @@ function buildForceGraph(agentId: string): { nodes: ForceNode[]; edges: ForceEdg
       source: e.source,
       target: e.target,
       relationType: relType,
-      idealLength: relType === 'has_attribute' ? 80 : (relType === 'bound_to' ? 100 : 120),
+      idealLength: relType === 'has_attribute' ? 140 : (relType === 'bound_to' ? 180 : 200),
       label: e.label,
     });
   });
@@ -1161,7 +1161,7 @@ function buildForceGraph(agentId: string): { nodes: ForceNode[]; edges: ForceEdg
             source: n.id,
             target: attrId,
             relationType: 'has_attribute',
-            idealLength: 80,
+            idealLength: 140,
           });
         }
       });
@@ -1191,7 +1191,7 @@ function buildForceGraph(agentId: string): { nodes: ForceNode[]; edges: ForceEdg
             source: dsId,
             target: n.id,
             relationType: 'consumes',
-            idealLength: 100,
+            idealLength: 180,
           });
         }
       });
@@ -1224,11 +1224,11 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     const w = canvasSize.w;
     const h = canvasSize.h;
 
-    // Initialize positions in a circle around center
+    // Initialize positions in a circle around center with larger radius
     const count = fNodes.length;
     fNodes.forEach((n, i) => {
       const angle = (i / count) * Math.PI * 2;
-      const radius = Math.min(w, h) * 0.25;
+      const radius = Math.min(w, h) * 0.38;
       n.x = w / 2 + Math.cos(angle) * radius;
       n.y = h / 2 + Math.sin(angle) * radius;
       n.vx = 0;
@@ -1282,12 +1282,12 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   React.useEffect(() => {
     if (nodes.length === 0 || edges.length === 0) return;
 
-    const K_REPULSE = 150;
-    const K_SPRING = 0.05;
-    const K_CENTER = 0.01;
-    const DAMPING = 0.9;
-    const MAX_FRAME = 300;
-    const ENERGY_THRESHOLD = 0.01;
+    const K_REPULSE = 2000;
+    const K_SPRING = 0.008;
+    const K_CENTER = 0.003;
+    const DAMPING = 0.88;
+    const MAX_FRAME = 600;
+    const ENERGY_THRESHOLD = 0.005;
     const w = canvasSize.w;
     const h = canvasSize.h;
 
@@ -1318,7 +1318,7 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           const dy = b.y - a.y;
           const distSq = dx * dx + dy * dy;
           const dist = Math.sqrt(distSq) || 1;
-          const minDist = (a.width + b.height) / 2 + 20;
+          const minDist = (a.width + a.height + b.width + b.height) / 4 + 60;
           const effectiveDist = Math.max(dist, minDist);
           const force = (K_REPULSE * a.mass * b.mass) / (effectiveDist * effectiveDist) * temperature;
           const fx = (dx / dist) * force;
@@ -1482,9 +1482,9 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const getArrowId = (relType: string) => `arrow-${relType}`;
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col h-full gap-2">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0 px-1">
         <div className="flex items-center gap-2">
           <Network size={16} className="text-indigo-600" />
           <span className="text-sm font-bold text-gray-900">Agent 知识关系网络</span>
@@ -1504,7 +1504,7 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 shrink-0 px-1">
         {([
           { type: 'ontology', label: '本体' },
           { type: 'attribute', label: '属性' },
@@ -1526,12 +1526,11 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       {/* SVG Force-Directed Graph */}
       <div
         ref={containerRef}
-        className="rounded-lg overflow-hidden relative"
+        className="flex-1 rounded-lg overflow-hidden relative min-h-0"
         style={{
           background: '#F8FAFC',
           backgroundImage: 'radial-gradient(circle, #E2E8F0 1px, transparent 1px)',
           backgroundSize: '20px 20px',
-          height: 520,
         }}
       >
         <svg
@@ -1819,7 +1818,7 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       </div>
 
       {/* Bottom stats */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-5 gap-3 shrink-0 px-1 pb-1">
         {[
           { label: '本体实体', value: `${nodes.filter(n => n.type === 'ontology').length}个`, icon: Database, color: 'text-blue-600 bg-blue-50' },
           { label: '数据源', value: `${nodes.filter(n => n.type === 'data_source' || n.type === 'data').length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
