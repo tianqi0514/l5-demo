@@ -991,10 +991,10 @@ export default function AgentStudio() {
 }
 
 // ============================================================
-// 锂电版推演知识图谱组件 —— 网络图可视化
+// 锂电版推演知识图谱组件 —— 力导向网络图可视化
 // ============================================================
 
-type GraphNodeType = 'intent' | 'ontology' | 'data' | 'skill' | 'constraint' | 'simulation' | 'result';
+type GraphNodeType = 'intent' | 'ontology' | 'attribute' | 'data_source' | 'skill' | 'constraint' | 'simulation' | 'result';
 
 interface GraphNode {
   id: string;
@@ -1008,6 +1008,8 @@ interface GraphNode {
   details?: string[];
   output?: string;
   icon: string;
+  attributes?: string[];
+  dataSources?: string[];
 }
 
 interface GraphEdge {
@@ -1015,88 +1017,91 @@ interface GraphEdge {
   source: string;
   target: string;
   label?: string;
+  relationType?: EdgeRelationType;
 }
+
+type EdgeRelationType = 'has_attribute' | 'bound_to' | 'consumes' | 'constrains' | 'produces' | 'depends_on' | 'flows_to';
 
 // Agent a1: 产销匹配推演Agent
 const AGENT_A1_NODES: GraphNode[] = [
-  // Layer 0: Intent (top center)
+  // Intent
   { id: 'a1-intent', label: '产销匹配意图', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"Q3产能瓶颈应对"意图，提取时间维度、约束条件、决策目标', output: '意图: 产能优化 | 时间: Q3 | 约束: 准时交付>95%', icon: 'brain', details: ['用户输入文本'] },
 
-  // Layer 1: Ontologies (spread left/right)
-  { id: 'a1-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 120, y: 120, width: 120, height: 40, description: '产线本体：产能、状态、OEE、节拍等属性', icon: 'database', details: ['产能: 1200pcs/day', 'OEE: 85%', '状态: 运行中'] },
-  { id: 'a1-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 280, y: 110, width: 110, height: 40, description: '工单本体：工序、数量、优先级、交期', icon: 'database', details: ['工单数: 47', '优先级: 高', '交期: 2024-08-15'] },
-  { id: 'a1-onto-equip', label: 'Equipment', type: 'ontology', x: 430, y: 115, width: 100, height: 40, description: '设备本体：设备编号、类型、健康度', icon: 'database', details: ['设备数: 28', '健康度: 92%', '维保状态: 正常'] },
-  { id: 'a1-onto-material', label: 'Material', type: 'ontology', x: 570, y: 110, width: 100, height: 40, description: '物料本体：库存量、采购周期、供应商', icon: 'database', details: ['库存: 5000pcs', '采购周期: 7天', '供应商: 12家'] },
-  { id: 'a1-onto-sales', label: 'SalesOrder', type: 'ontology', x: 700, y: 120, width: 110, height: 40, description: '销售订单本体：客户、数量、交期、优先级', icon: 'database', details: ['订单数: 23', '客户: A类', '交付窗口: Q3'] },
+  // Ontologies
+  { id: 'a1-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 120, y: 120, width: 120, height: 40, description: '产线本体：产能、状态、OEE、节拍等属性', icon: 'database', details: ['产能: 1200pcs/day', 'OEE: 85%', '状态: 运行中'], attributes: ['产能', '状态', 'OEE', '节拍'] },
+  { id: 'a1-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 280, y: 110, width: 110, height: 40, description: '工单本体：工序、数量、优先级、交期', icon: 'database', details: ['工单数: 47', '优先级: 高', '交期: 2024-08-15'], attributes: ['工序', '数量', '优先级', '交期'] },
+  { id: 'a1-onto-equip', label: 'Equipment', type: 'ontology', x: 430, y: 115, width: 100, height: 40, description: '设备本体：设备编号、类型、健康度', icon: 'database', details: ['设备数: 28', '健康度: 92%', '维保状态: 正常'], attributes: ['设备编号', '类型', '健康度'] },
+  { id: 'a1-onto-material', label: 'Material', type: 'ontology', x: 570, y: 110, width: 100, height: 40, description: '物料本体：库存量、采购周期、供应商', icon: 'database', details: ['库存: 5000pcs', '采购周期: 7天', '供应商: 12家'], attributes: ['库存量', '采购周期', '供应商'] },
+  { id: 'a1-onto-sales', label: 'SalesOrder', type: 'ontology', x: 700, y: 120, width: 110, height: 40, description: '销售订单本体：客户、数量、交期、优先级', icon: 'database', details: ['订单数: 23', '客户: A类', '交付窗口: Q3'], attributes: ['客户', '数量', '交期', '优先级'] },
 
-  // Layer 2: Data sources
-  { id: 'a1-data-mes', label: 'MES', type: 'data', x: 180, y: 200, width: 80, height: 40, description: '制造执行系统实时数据', icon: 'arrow', details: ['产线实时状态', '工单进度', '质量数据'] },
-  { id: 'a1-data-erp', label: 'ERP', type: 'data', x: 320, y: 195, width: 80, height: 40, description: '企业资源计划系统数据', icon: 'arrow', details: ['销售订单', '物料库存', '财务数据'] },
-  { id: 'a1-data-scada', label: 'SCADA', type: 'data', x: 480, y: 200, width: 90, height: 40, description: '数据采集与监控系统', icon: 'arrow', details: ['设备遥测', '温度/压力', '能耗数据'] },
+  // Data sources
+  { id: 'a1-data-mes', label: 'MES', type: 'data_source', x: 180, y: 200, width: 80, height: 40, description: '制造执行系统实时数据', icon: 'database', details: ['产线实时状态', '工单进度', '质量数据'] },
+  { id: 'a1-data-erp', label: 'ERP', type: 'data_source', x: 320, y: 195, width: 80, height: 40, description: '企业资源计划系统数据', icon: 'database', details: ['销售订单', '物料库存', '财务数据'] },
+  { id: 'a1-data-scada', label: 'SCADA', type: 'data_source', x: 480, y: 200, width: 90, height: 40, description: '数据采集与监控系统', icon: 'database', details: ['设备遥测', '温度/压力', '能耗数据'] },
 
-  // Layer 3: Skills (middle)
-  { id: 'a1-skill-capacity', label: 'capacity_planning', type: 'skill', x: 140, y: 290, width: 140, height: 40, description: '产能规划技能：计算各产线产能利用率', icon: 'wrench', details: ['瓶颈分析', '产能平衡', '负载预测'] },
-  { id: 'a1-skill-scheduling', label: 'production_scheduling', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '生产排程优化技能：智能排产算法', icon: 'wrench', details: ['遗传算法', '约束满足', '多目标优化'] },
-  { id: 'a1-skill-oee', label: 'oee_optimizer', type: 'skill', x: 540, y: 290, width: 130, height: 40, description: 'OEE优化技能：设备综合效率提升', icon: 'wrench', details: ['停机分析', '速度损失', '质量损失'] },
+  // Skills
+  { id: 'a1-skill-capacity', label: 'capacity_planning', type: 'skill', x: 140, y: 290, width: 140, height: 40, description: '产能规划技能：计算各产线产能利用率', icon: 'wrench', details: ['瓶颈分析', '产能平衡', '负载预测'], dataSources: ['a1-data-mes'] },
+  { id: 'a1-skill-scheduling', label: 'production_scheduling', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '生产排程优化技能：智能排产算法', icon: 'wrench', details: ['遗传算法', '约束满足', '多目标优化'], dataSources: ['a1-data-erp'] },
+  { id: 'a1-skill-oee', label: 'oee_optimizer', type: 'skill', x: 540, y: 290, width: 130, height: 40, description: 'OEE优化技能：设备综合效率提升', icon: 'wrench', details: ['停机分析', '速度损失', '质量损失'], dataSources: ['a1-data-scada'] },
 
-  // Layer 4: Constraints
+  // Constraints
   { id: 'a1-constraint-capacity', label: '产能利用率>96%', type: 'constraint', x: 200, y: 370, width: 140, height: 40, description: '硬约束：产能利用率必须大于96%', icon: 'shield', details: ['当前: 78%', '缺口: 18%', '优先级: P0'] },
   { id: 'a1-constraint-delivery', label: '准时交付率>95%', type: 'constraint', x: 400, y: 375, width: 140, height: 40, description: '硬约束：订单准时交付率必须大于95%', icon: 'shield', details: ['当前: 89%', '缺口: 6%', '优先级: P0'] },
   { id: 'a1-constraint-cost', label: '成本最优', type: 'constraint', x: 580, y: 370, width: 100, height: 40, description: '软约束：在满足硬约束前提下成本最优', icon: 'shield', details: ['加班成本', '调线成本', '外包成本'] },
 
-  // Layer 5: Simulation
+  // Simulation
   { id: 'a1-sim-des', label: '离散事件仿真', type: 'simulation', x: 320, y: 460, width: 160, height: 48, description: 'DES仿真引擎：生成多套方案并预测KPI', output: '加班: 成本+8% 准交+3% | 调线: 成本+2% 准交+1%', icon: 'play', details: ['方案数: 3', '仿真时长: 30天', '置信度: 91%'] },
 
-  // Layer 6: Result (bottom center)
+  // Result
   { id: 'a1-result', label: '最优方案', type: 'result', x: 330, y: 550, width: 140, height: 48, description: '推荐调线方案：成本最低且满足交付约束', output: '推荐调线方案：成本最低且满足交付约束，置信度91%', icon: 'file', details: ['成本增加: +2%', '准交率: 96.5%', '执行周期: 3天'] },
 ];
 
 const AGENT_A1_EDGES: GraphEdge[] = [
-  // Intent -> Ontologies
-  { id: 'e1', source: 'a1-intent', target: 'a1-onto-prodline' },
-  { id: 'e2', source: 'a1-intent', target: 'a1-onto-workorder' },
-  { id: 'e3', source: 'a1-intent', target: 'a1-onto-equip' },
-  { id: 'e4', source: 'a1-intent', target: 'a1-onto-material' },
-  { id: 'e5', source: 'a1-intent', target: 'a1-onto-sales' },
-  // Ontologies -> Data
-  { id: 'e6', source: 'a1-onto-prodline', target: 'a1-data-mes' },
-  { id: 'e7', source: 'a1-onto-workorder', target: 'a1-data-mes' },
-  { id: 'e8', source: 'a1-onto-equip', target: 'a1-data-scada' },
-  { id: 'e9', source: 'a1-onto-material', target: 'a1-data-erp' },
-  { id: 'e10', source: 'a1-onto-sales', target: 'a1-data-erp' },
-  // Data -> Skills
-  { id: 'e11', source: 'a1-data-mes', target: 'a1-skill-capacity' },
-  { id: 'e12', source: 'a1-data-erp', target: 'a1-skill-scheduling' },
-  { id: 'e13', source: 'a1-data-scada', target: 'a1-skill-oee' },
-  // Skills -> Constraints
-  { id: 'e14', source: 'a1-skill-capacity', target: 'a1-constraint-capacity' },
-  { id: 'e15', source: 'a1-skill-scheduling', target: 'a1-constraint-delivery' },
-  { id: 'e16', source: 'a1-skill-oee', target: 'a1-constraint-cost' },
-  // Constraints -> Simulation
-  { id: 'e17', source: 'a1-constraint-capacity', target: 'a1-sim-des' },
-  { id: 'e18', source: 'a1-constraint-delivery', target: 'a1-sim-des' },
-  { id: 'e19', source: 'a1-constraint-cost', target: 'a1-sim-des' },
-  // Simulation -> Result
-  { id: 'e20', source: 'a1-sim-des', target: 'a1-result' },
+  // Intent -> Ontologies (depends_on)
+  { id: 'e1', source: 'a1-intent', target: 'a1-onto-prodline', relationType: 'depends_on' },
+  { id: 'e2', source: 'a1-intent', target: 'a1-onto-workorder', relationType: 'depends_on' },
+  { id: 'e3', source: 'a1-intent', target: 'a1-onto-equip', relationType: 'depends_on' },
+  { id: 'e4', source: 'a1-intent', target: 'a1-onto-material', relationType: 'depends_on' },
+  { id: 'e5', source: 'a1-intent', target: 'a1-onto-sales', relationType: 'depends_on' },
+  // Ontologies -> Data sources (bound_to)
+  { id: 'e6', source: 'a1-onto-prodline', target: 'a1-data-mes', relationType: 'bound_to' },
+  { id: 'e7', source: 'a1-onto-workorder', target: 'a1-data-mes', relationType: 'bound_to' },
+  { id: 'e8', source: 'a1-onto-equip', target: 'a1-data-scada', relationType: 'bound_to' },
+  { id: 'e9', source: 'a1-onto-material', target: 'a1-data-erp', relationType: 'bound_to' },
+  { id: 'e10', source: 'a1-onto-sales', target: 'a1-data-erp', relationType: 'bound_to' },
+  // Data sources -> Skills (flows_to)
+  { id: 'e11', source: 'a1-data-mes', target: 'a1-skill-capacity', relationType: 'flows_to' },
+  { id: 'e12', source: 'a1-data-erp', target: 'a1-skill-scheduling', relationType: 'flows_to' },
+  { id: 'e13', source: 'a1-data-scada', target: 'a1-skill-oee', relationType: 'flows_to' },
+  // Skills -> Constraints (constrains)
+  { id: 'e14', source: 'a1-skill-capacity', target: 'a1-constraint-capacity', relationType: 'constrains' },
+  { id: 'e15', source: 'a1-skill-scheduling', target: 'a1-constraint-delivery', relationType: 'constrains' },
+  { id: 'e16', source: 'a1-skill-oee', target: 'a1-constraint-cost', relationType: 'constrains' },
+  // Constraints -> Simulation (depends_on)
+  { id: 'e17', source: 'a1-constraint-capacity', target: 'a1-sim-des', relationType: 'depends_on' },
+  { id: 'e18', source: 'a1-constraint-delivery', target: 'a1-sim-des', relationType: 'depends_on' },
+  { id: 'e19', source: 'a1-constraint-cost', target: 'a1-sim-des', relationType: 'depends_on' },
+  // Simulation -> Result (produces)
+  { id: 'e20', source: 'a1-sim-des', target: 'a1-result', relationType: 'produces' },
 ];
 
 // Agent a2: 设备异常诊断Agent
 const AGENT_A2_NODES: GraphNode[] = [
   { id: 'a2-intent', label: '设备异常诊断', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"产线设备异常诊断"意图，识别异常类型、设备编号', output: '意图: 异常诊断 | 设备: L3-涂布机-02 | 类型: 温度异常', icon: 'brain', details: ['用户输入文本'] },
 
-  { id: 'a2-onto-equip', label: 'Equipment', type: 'ontology', x: 130, y: 120, width: 110, height: 40, description: '设备本体：设备编号、类型、健康度、维保记录', icon: 'database', details: ['设备: L3-涂布机-02', '类型: 涂布', '运行时长: 8760h'] },
-  { id: 'a2-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 290, y: 110, width: 120, height: 40, description: '产线本体：产线编号、工序、产能', icon: 'database', details: ['产线: L3', '工序: 涂布', '节拍: 120pcs/h'] },
-  { id: 'a2-onto-quality', label: 'QualityCheck', type: 'ontology', x: 450, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、标准值、实测值', icon: 'database', details: ['检测项: 温度', '标准: 80±2°C', '实测: 87.3°C'] },
-  { id: 'a2-onto-material', label: 'Material', type: 'ontology', x: 610, y: 110, width: 100, height: 40, description: '物料本体：浆料批次、供应商、入库时间', icon: 'database', details: ['浆料批次: SJ-240815', '供应商: B公司', '入库: 2024-08-10'] },
-  { id: 'a2-onto-process', label: 'Process', type: 'ontology', x: 740, y: 120, width: 100, height: 40, description: '工艺本体：工艺参数、标准配方', icon: 'database', details: ['工艺: 负极涂布', '速度: 12m/min', '厚度: 120μm'] },
+  { id: 'a2-onto-equip', label: 'Equipment', type: 'ontology', x: 130, y: 120, width: 110, height: 40, description: '设备本体：设备编号、类型、健康度、维保记录', icon: 'database', details: ['设备: L3-涂布机-02', '类型: 涂布', '运行时长: 8760h'], attributes: ['设备编号', '类型', '健康度', '维保记录'] },
+  { id: 'a2-onto-prodline', label: 'ProductionLine', type: 'ontology', x: 290, y: 110, width: 120, height: 40, description: '产线本体：产线编号、工序、产能', icon: 'database', details: ['产线: L3', '工序: 涂布', '节拍: 120pcs/h'], attributes: ['产线编号', '工序', '产能'] },
+  { id: 'a2-onto-quality', label: 'QualityCheck', type: 'ontology', x: 450, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、标准值、实测值', icon: 'database', details: ['检测项: 温度', '标准: 80±2°C', '实测: 87.3°C'], attributes: ['检测项', '标准值', '实测值'] },
+  { id: 'a2-onto-material', label: 'Material', type: 'ontology', x: 610, y: 110, width: 100, height: 40, description: '物料本体：浆料批次、供应商、入库时间', icon: 'database', details: ['浆料批次: SJ-240815', '供应商: B公司', '入库: 2024-08-10'], attributes: ['浆料批次', '供应商', '入库时间'] },
+  { id: 'a2-onto-process', label: 'Process', type: 'ontology', x: 740, y: 120, width: 100, height: 40, description: '工艺本体：工艺参数、标准配方', icon: 'database', details: ['工艺: 负极涂布', '速度: 12m/min', '厚度: 120μm'], attributes: ['工艺参数', '标准配方'] },
 
-  { id: 'a2-data-scada', label: 'SCADA', type: 'data', x: 160, y: 200, width: 90, height: 40, description: 'SCADA实时数据流', icon: 'arrow', details: ['温度遥测', '压力数据', '振动频谱'] },
-  { id: 'a2-data-iot', label: 'IoT Sensors', type: 'data', x: 310, y: 195, width: 100, height: 40, description: 'IoT传感器数据', icon: 'arrow', details: ['温度传感器', '电流传感器', '红外热像'] },
-  { id: 'a2-data-maint', label: 'Maintenance', type: 'data', x: 470, y: 200, width: 110, height: 40, description: '设备维保历史数据库', icon: 'arrow', details: ['维保记录', '备件更换', '故障历史'] },
+  { id: 'a2-data-scada', label: 'SCADA', type: 'data_source', x: 160, y: 200, width: 90, height: 40, description: 'SCADA实时数据流', icon: 'database', details: ['温度遥测', '压力数据', '振动频谱'] },
+  { id: 'a2-data-iot', label: 'IoT Sensors', type: 'data_source', x: 310, y: 195, width: 100, height: 40, description: 'IoT传感器数据', icon: 'database', details: ['温度传感器', '电流传感器', '红外热像'] },
+  { id: 'a2-data-maint', label: 'Maintenance', type: 'data_source', x: 470, y: 200, width: 110, height: 40, description: '设备维保历史数据库', icon: 'database', details: ['维保记录', '备件更换', '故障历史'] },
 
-  { id: 'a2-skill-anomaly', label: 'anomaly_detector', type: 'skill', x: 130, y: 290, width: 150, height: 40, description: '异常检测技能：基于时序数据的异常模式识别', icon: 'wrench', details: ['温度异常', '趋势分析', '阈值判断'] },
-  { id: 'a2-skill-rootcause', label: 'root_cause_analysis', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '根因分析技能：基于知识图谱的故障定位', icon: 'wrench', details: ['故障树', '关联分析', '历史匹配'] },
-  { id: 'a2-skill-predict', label: 'predictive_maintenance', type: 'skill', x: 540, y: 290, width: 170, height: 40, description: '预测性维护技能：剩余使用寿命预测', icon: 'wrench', details: ['RUL预测', '劣化趋势', '维护建议'] },
+  { id: 'a2-skill-anomaly', label: 'anomaly_detector', type: 'skill', x: 130, y: 290, width: 150, height: 40, description: '异常检测技能：基于时序数据的异常模式识别', icon: 'wrench', details: ['温度异常', '趋势分析', '阈值判断'], dataSources: ['a2-data-scada'] },
+  { id: 'a2-skill-rootcause', label: 'root_cause_analysis', type: 'skill', x: 330, y: 285, width: 160, height: 40, description: '根因分析技能：基于知识图谱的故障定位', icon: 'wrench', details: ['故障树', '关联分析', '历史匹配'], dataSources: ['a2-data-iot'] },
+  { id: 'a2-skill-predict', label: 'predictive_maintenance', type: 'skill', x: 540, y: 290, width: 170, height: 40, description: '预测性维护技能：剩余使用寿命预测', icon: 'wrench', details: ['RUL预测', '劣化趋势', '维护建议'], dataSources: ['a2-data-maint'] },
 
   { id: 'a2-constraint-downtime', label: '停机时间<4h', type: 'constraint', x: 180, y: 375, width: 130, height: 40, description: '硬约束：设备停机维修时间必须小于4小时', icon: 'shield', details: ['当前预估: 2h', '满足约束', '优先级: P0'] },
   { id: 'a2-constraint-cost', label: '维修成本<5万', type: 'constraint', x: 360, y: 380, width: 130, height: 40, description: '硬约束：单次维修成本必须小于5万元', icon: 'shield', details: ['当前预估: 1.2万', '满足约束', '优先级: P0'] },
@@ -1108,45 +1113,45 @@ const AGENT_A2_NODES: GraphNode[] = [
 ];
 
 const AGENT_A2_EDGES: GraphEdge[] = [
-  { id: 'e1', source: 'a2-intent', target: 'a2-onto-equip' },
-  { id: 'e2', source: 'a2-intent', target: 'a2-onto-prodline' },
-  { id: 'e3', source: 'a2-intent', target: 'a2-onto-quality' },
-  { id: 'e4', source: 'a2-intent', target: 'a2-onto-material' },
-  { id: 'e5', source: 'a2-intent', target: 'a2-onto-process' },
-  { id: 'e6', source: 'a2-onto-equip', target: 'a2-data-scada' },
-  { id: 'e7', source: 'a2-onto-prodline', target: 'a2-data-scada' },
-  { id: 'e8', source: 'a2-onto-quality', target: 'a2-data-iot' },
-  { id: 'e9', source: 'a2-onto-material', target: 'a2-data-maint' },
-  { id: 'e10', source: 'a2-onto-process', target: 'a2-data-iot' },
-  { id: 'e11', source: 'a2-data-scada', target: 'a2-skill-anomaly' },
-  { id: 'e12', source: 'a2-data-iot', target: 'a2-skill-rootcause' },
-  { id: 'e13', source: 'a2-data-maint', target: 'a2-skill-predict' },
-  { id: 'e14', source: 'a2-skill-anomaly', target: 'a2-constraint-downtime' },
-  { id: 'e15', source: 'a2-skill-rootcause', target: 'a2-constraint-cost' },
-  { id: 'e16', source: 'a2-skill-predict', target: 'a2-constraint-safety' },
-  { id: 'e17', source: 'a2-constraint-downtime', target: 'a2-sim-impact' },
-  { id: 'e18', source: 'a2-constraint-cost', target: 'a2-sim-impact' },
-  { id: 'e19', source: 'a2-constraint-safety', target: 'a2-sim-impact' },
-  { id: 'e20', source: 'a2-sim-impact', target: 'a2-result' },
+  { id: 'e1', source: 'a2-intent', target: 'a2-onto-equip', relationType: 'depends_on' },
+  { id: 'e2', source: 'a2-intent', target: 'a2-onto-prodline', relationType: 'depends_on' },
+  { id: 'e3', source: 'a2-intent', target: 'a2-onto-quality', relationType: 'depends_on' },
+  { id: 'e4', source: 'a2-intent', target: 'a2-onto-material', relationType: 'depends_on' },
+  { id: 'e5', source: 'a2-intent', target: 'a2-onto-process', relationType: 'depends_on' },
+  { id: 'e6', source: 'a2-onto-equip', target: 'a2-data-scada', relationType: 'bound_to' },
+  { id: 'e7', source: 'a2-onto-prodline', target: 'a2-data-scada', relationType: 'bound_to' },
+  { id: 'e8', source: 'a2-onto-quality', target: 'a2-data-iot', relationType: 'bound_to' },
+  { id: 'e9', source: 'a2-onto-material', target: 'a2-data-maint', relationType: 'bound_to' },
+  { id: 'e10', source: 'a2-onto-process', target: 'a2-data-iot', relationType: 'bound_to' },
+  { id: 'e11', source: 'a2-data-scada', target: 'a2-skill-anomaly', relationType: 'flows_to' },
+  { id: 'e12', source: 'a2-data-iot', target: 'a2-skill-rootcause', relationType: 'flows_to' },
+  { id: 'e13', source: 'a2-data-maint', target: 'a2-skill-predict', relationType: 'flows_to' },
+  { id: 'e14', source: 'a2-skill-anomaly', target: 'a2-constraint-downtime', relationType: 'constrains' },
+  { id: 'e15', source: 'a2-skill-rootcause', target: 'a2-constraint-cost', relationType: 'constrains' },
+  { id: 'e16', source: 'a2-skill-predict', target: 'a2-constraint-safety', relationType: 'constrains' },
+  { id: 'e17', source: 'a2-constraint-downtime', target: 'a2-sim-impact', relationType: 'depends_on' },
+  { id: 'e18', source: 'a2-constraint-cost', target: 'a2-sim-impact', relationType: 'depends_on' },
+  { id: 'e19', source: 'a2-constraint-safety', target: 'a2-sim-impact', relationType: 'depends_on' },
+  { id: 'e20', source: 'a2-sim-impact', target: 'a2-result', relationType: 'produces' },
 ];
 
 // Agent a3: 质量追溯分析Agent
 const AGENT_A3_NODES: GraphNode[] = [
   { id: 'a3-intent', label: '质量追溯分析', type: 'intent', x: 400, y: 30, width: 140, height: 44, description: '解析"批次质量缺陷追溯"意图，识别批次号、缺陷类型', output: '意图: 质量追溯 | 批次: BT-2024-Q3-8847 | 缺陷: 容量衰减', icon: 'brain', details: ['用户输入文本'] },
 
-  { id: 'a3-onto-product', label: 'Product', type: 'ontology', x: 110, y: 120, width: 100, height: 40, description: '产品本体：产品型号、批次、规格', icon: 'database', details: ['型号: LP-280', '批次: BT-8847', '规格: 280Ah'] },
-  { id: 'a3-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 250, y: 110, width: 110, height: 40, description: '工单本体：工序流转、操作员、设备', icon: 'database', details: ['工单: WO-4521', '工序: 12道', '操作员: 张三'] },
-  { id: 'a3-onto-quality', label: 'QualityCheck', type: 'ontology', x: 400, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、CPK、不良率', icon: 'database', details: ['CPK: 1.15', '不良率: 0.8%', '检测项: 容量'] },
-  { id: 'a3-onto-material', label: 'Material', type: 'ontology', x: 560, y: 110, width: 100, height: 40, description: '物料本体：物料批次、供应商、来料检验', icon: 'database', details: ['物料批次: FM-3321', '供应商: C公司', '来料: 合格'] },
-  { id: 'a3-onto-equip', label: 'Equipment', type: 'ontology', x: 700, y: 120, width: 100, height: 40, description: '设备本体：设备编号、工序、维护记录', icon: 'database', details: ['设备: E-1205', '工序: 负极涂布', '维护: 正常'] },
+  { id: 'a3-onto-product', label: 'Product', type: 'ontology', x: 110, y: 120, width: 100, height: 40, description: '产品本体：产品型号、批次、规格', icon: 'database', details: ['型号: LP-280', '批次: BT-8847', '规格: 280Ah'], attributes: ['产品型号', '批次', '规格'] },
+  { id: 'a3-onto-workorder', label: 'WorkOrder', type: 'ontology', x: 250, y: 110, width: 110, height: 40, description: '工单本体：工序流转、操作员、设备', icon: 'database', details: ['工单: WO-4521', '工序: 12道', '操作员: 张三'], attributes: ['工序流转', '操作员', '设备'] },
+  { id: 'a3-onto-quality', label: 'QualityCheck', type: 'ontology', x: 400, y: 115, width: 120, height: 40, description: '质量检测本体：检测项、CPK、不良率', icon: 'database', details: ['CPK: 1.15', '不良率: 0.8%', '检测项: 容量'], attributes: ['检测项', 'CPK', '不良率'] },
+  { id: 'a3-onto-material', label: 'Material', type: 'ontology', x: 560, y: 110, width: 100, height: 40, description: '物料本体：物料批次、供应商、来料检验', icon: 'database', details: ['物料批次: FM-3321', '供应商: C公司', '来料: 合格'], attributes: ['物料批次', '供应商', '来料检验'] },
+  { id: 'a3-onto-equip', label: 'Equipment', type: 'ontology', x: 700, y: 120, width: 100, height: 40, description: '设备本体：设备编号、工序、维护记录', icon: 'database', details: ['设备: E-1205', '工序: 负极涂布', '维护: 正常'], attributes: ['设备编号', '工序', '维护记录'] },
 
-  { id: 'a3-data-qms', label: 'QMS', type: 'data', x: 150, y: 200, width: 80, height: 40, description: '质量管理系统数据', icon: 'arrow', details: ['检验记录', 'SPC数据', '不合格品'] },
-  { id: 'a3-data-mes', label: 'MES', type: 'data', x: 290, y: 195, width: 80, height: 40, description: '制造执行系统数据', icon: 'arrow', details: ['工序参数', '设备数据', '环境数据'] },
-  { id: 'a3-data-wms', label: 'WMS', type: 'data', x: 430, y: 200, width: 80, height: 40, description: '仓库管理系统数据', icon: 'arrow', details: ['物料批次', '入库记录', '库位信息'] },
+  { id: 'a3-data-qms', label: 'QMS', type: 'data_source', x: 150, y: 200, width: 80, height: 40, description: '质量管理系统数据', icon: 'database', details: ['检验记录', 'SPC数据', '不合格品'] },
+  { id: 'a3-data-mes', label: 'MES', type: 'data_source', x: 290, y: 195, width: 80, height: 40, description: '制造执行系统数据', icon: 'database', details: ['工序参数', '设备数据', '环境数据'] },
+  { id: 'a3-data-wms', label: 'WMS', type: 'data_source', x: 430, y: 200, width: 80, height: 40, description: '仓库管理系统数据', icon: 'database', details: ['物料批次', '入库记录', '库位信息'] },
 
-  { id: 'a3-skill-trace', label: 'traceability_query', type: 'skill', x: 140, y: 290, width: 150, height: 40, description: '追溯查询技能：跨工序正向/反向追溯', icon: 'wrench', details: ['正向追溯', '反向追溯', '树状展开'] },
-  { id: 'a3-skill-correlation', label: 'correlation_analyzer', type: 'skill', x: 350, y: 285, width: 170, height: 40, description: '关联分析技能：缺陷与工艺参数关联', icon: 'wrench', details: ['相关性分析', '回归模型', '显著性检验'] },
-  { id: 'a3-skill-spc', label: 'spc_analysis', type: 'skill', x: 570, y: 290, width: 130, height: 40, description: 'SPC统计过程控制分析', icon: 'wrench', details: ['控制图', '过程能力', '异常模式'] },
+  { id: 'a3-skill-trace', label: 'traceability_query', type: 'skill', x: 140, y: 290, width: 150, height: 40, description: '追溯查询技能：跨工序正向/反向追溯', icon: 'wrench', details: ['正向追溯', '反向追溯', '树状展开'], dataSources: ['a3-data-qms'] },
+  { id: 'a3-skill-correlation', label: 'correlation_analyzer', type: 'skill', x: 350, y: 285, width: 170, height: 40, description: '关联分析技能：缺陷与工艺参数关联', icon: 'wrench', details: ['相关性分析', '回归模型', '显著性检验'], dataSources: ['a3-data-mes'] },
+  { id: 'a3-skill-spc', label: 'spc_analysis', type: 'skill', x: 570, y: 290, width: 130, height: 40, description: 'SPC统计过程控制分析', icon: 'wrench', details: ['控制图', '过程能力', '异常模式'], dataSources: ['a3-data-wms'] },
 
   { id: 'a3-constraint-cpk', label: 'CPK>1.33', type: 'constraint', x: 170, y: 375, width: 110, height: 40, description: '硬约束：过程能力指数必须大于1.33', icon: 'shield', details: ['当前: 1.15', '不满足', '触发预警'] },
   { id: 'a3-constraint-defect', label: '不良率<0.5%', type: 'constraint', x: 330, y: 380, width: 120, height: 40, description: '硬约束：不良率必须小于0.5%', icon: 'shield', details: ['当前: 0.8%', '不满足', '触发预警'] },
@@ -1158,26 +1163,26 @@ const AGENT_A3_NODES: GraphNode[] = [
 ];
 
 const AGENT_A3_EDGES: GraphEdge[] = [
-  { id: 'e1', source: 'a3-intent', target: 'a3-onto-product' },
-  { id: 'e2', source: 'a3-intent', target: 'a3-onto-workorder' },
-  { id: 'e3', source: 'a3-intent', target: 'a3-onto-quality' },
-  { id: 'e4', source: 'a3-intent', target: 'a3-onto-material' },
-  { id: 'e5', source: 'a3-intent', target: 'a3-onto-equip' },
-  { id: 'e6', source: 'a3-onto-product', target: 'a3-data-qms' },
-  { id: 'e7', source: 'a3-onto-workorder', target: 'a3-data-mes' },
-  { id: 'e8', source: 'a3-onto-quality', target: 'a3-data-qms' },
-  { id: 'e9', source: 'a3-onto-material', target: 'a3-data-wms' },
-  { id: 'e10', source: 'a3-onto-equip', target: 'a3-data-mes' },
-  { id: 'e11', source: 'a3-data-qms', target: 'a3-skill-trace' },
-  { id: 'e12', source: 'a3-data-mes', target: 'a3-skill-correlation' },
-  { id: 'e13', source: 'a3-data-wms', target: 'a3-skill-spc' },
-  { id: 'e14', source: 'a3-skill-trace', target: 'a3-constraint-cpk' },
-  { id: 'e15', source: 'a3-skill-correlation', target: 'a3-constraint-defect' },
-  { id: 'e16', source: 'a3-skill-spc', target: 'a3-constraint-trace' },
-  { id: 'e17', source: 'a3-constraint-cpk', target: 'a3-sim-impact' },
-  { id: 'e18', source: 'a3-constraint-defect', target: 'a3-sim-impact' },
-  { id: 'e19', source: 'a3-constraint-trace', target: 'a3-sim-impact' },
-  { id: 'e20', source: 'a3-sim-impact', target: 'a3-result' },
+  { id: 'e1', source: 'a3-intent', target: 'a3-onto-product', relationType: 'depends_on' },
+  { id: 'e2', source: 'a3-intent', target: 'a3-onto-workorder', relationType: 'depends_on' },
+  { id: 'e3', source: 'a3-intent', target: 'a3-onto-quality', relationType: 'depends_on' },
+  { id: 'e4', source: 'a3-intent', target: 'a3-onto-material', relationType: 'depends_on' },
+  { id: 'e5', source: 'a3-intent', target: 'a3-onto-equip', relationType: 'depends_on' },
+  { id: 'e6', source: 'a3-onto-product', target: 'a3-data-qms', relationType: 'bound_to' },
+  { id: 'e7', source: 'a3-onto-workorder', target: 'a3-data-mes', relationType: 'bound_to' },
+  { id: 'e8', source: 'a3-onto-quality', target: 'a3-data-qms', relationType: 'bound_to' },
+  { id: 'e9', source: 'a3-onto-material', target: 'a3-data-wms', relationType: 'bound_to' },
+  { id: 'e10', source: 'a3-onto-equip', target: 'a3-data-mes', relationType: 'bound_to' },
+  { id: 'e11', source: 'a3-data-qms', target: 'a3-skill-trace', relationType: 'flows_to' },
+  { id: 'e12', source: 'a3-data-mes', target: 'a3-skill-correlation', relationType: 'flows_to' },
+  { id: 'e13', source: 'a3-data-wms', target: 'a3-skill-spc', relationType: 'flows_to' },
+  { id: 'e14', source: 'a3-skill-trace', target: 'a3-constraint-cpk', relationType: 'constrains' },
+  { id: 'e15', source: 'a3-skill-correlation', target: 'a3-constraint-defect', relationType: 'constrains' },
+  { id: 'e16', source: 'a3-skill-spc', target: 'a3-constraint-trace', relationType: 'constrains' },
+  { id: 'e17', source: 'a3-constraint-cpk', target: 'a3-sim-impact', relationType: 'depends_on' },
+  { id: 'e18', source: 'a3-constraint-defect', target: 'a3-sim-impact', relationType: 'depends_on' },
+  { id: 'e19', source: 'a3-constraint-trace', target: 'a3-sim-impact', relationType: 'depends_on' },
+  { id: 'e20', source: 'a3-sim-impact', target: 'a3-result', relationType: 'produces' },
 ];
 
 const AGENT_GRAPHS: Record<string, { nodes: GraphNode[]; edges: GraphEdge[] }> = {
@@ -1186,122 +1191,53 @@ const AGENT_GRAPHS: Record<string, { nodes: GraphNode[]; edges: GraphEdge[] }> =
   a3: { nodes: AGENT_A3_NODES, edges: AGENT_A3_EDGES },
 };
 
-const B_ICON_MAP: Record<string, any> = {
-  brain: BrainCircuit, database: Database, arrow: ArrowRight,
-  wrench: Wrench, shield: ShieldCheck, play: MonitorPlay, file: FileOutput,
-};
-
 // ============================================================
-// 水平分层知识图谱布局 —— 节点配置
+// 力导向知识关系网络图 —— 节点与边样式配置
 // ============================================================
-
-const NODE_CARD_W = 140;
-const NODE_CARD_H = 52;
-const COL_SPACING = 180;
 
 const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {
   intent:     '#722ED1',
   ontology:   '#1677FF',
-  data:       '#13C2C2',
+  attribute:  '#1677FF',
+  data_source:'#13C2C2',
   skill:      '#FA8C16',
   constraint: '#F5222D',
   simulation: '#2F54EB',
   result:     '#52C41A',
 };
 
-const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; bg: string; label: string }> = {
-  intent:     { color: '#722ED1', bg: '#F3E8FF', label: '意图' },
-  ontology:   { color: '#1677FF', bg: '#DBEAFE', label: '本体' },
-  data:       { color: '#13C2C2', bg: '#CFFAFE', label: '数据' },
-  skill:      { color: '#FA8C16', bg: '#FEF3C7', label: '技能' },
-  constraint: { color: '#F5222D', bg: '#FEE2E2', label: '约束' },
-  simulation: { color: '#2F54EB', bg: '#E0E7FF', label: '推演' },
-  result:     { color: '#52C41A', bg: '#D1FAE5', label: '结果' },
+const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; bg: string; label: string; icon: string }> = {
+  intent:     { color: '#722ED1', bg: '#F3E8FF', label: '意图', icon: 'brain' },
+  ontology:   { color: '#1677FF', bg: '#DBEAFE', label: '本体', icon: 'database' },
+  attribute:  { color: '#1677FF', bg: '#E6F4FF', label: '属性', icon: 'tag' },
+  data_source:{ color: '#13C2C2', bg: '#CFFAFE', label: '数据源', icon: 'database' },
+  skill:      { color: '#FA8C16', bg: '#FEF3C7', label: '技能', icon: 'wrench' },
+  constraint: { color: '#F5222D', bg: '#FEE2E2', label: '约束', icon: 'shield' },
+  simulation: { color: '#2F54EB', bg: '#E0E7FF', label: '推演', icon: 'play' },
+  result:     { color: '#52C41A', bg: '#D1FAE5', label: '结果', icon: 'file' },
 };
 
-/** BFS compute topological levels (from intent root) */
-function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, number> {
-  const levels = new Map<string, number>();
-  const adj = new Map<string, string[]>();
-  const inDegree = new Map<string, number>();
+const EDGE_STYLES: Record<EdgeRelationType, { color: string; opacity: number; width: number; dashed: boolean; arrow: boolean; flow: boolean }> = {
+  has_attribute: { color: '#94A3B8', opacity: 0.4, width: 1,   dashed: true,  arrow: false, flow: false },
+  bound_to:      { color: '#13C2C2', opacity: 0.5, width: 1.5, dashed: true,  arrow: true,  flow: false },
+  consumes:      { color: '#FA8C16', opacity: 0.5, width: 1.5, dashed: false, arrow: true,  flow: false },
+  constrains:    { color: '#EF4444', opacity: 0.5, width: 1.5, dashed: false, arrow: true,  flow: false },
+  produces:      { color: '#10B981', opacity: 0.5, width: 1.5, dashed: false, arrow: true,  flow: false },
+  depends_on:    { color: '#94A3B8', opacity: 0.4, width: 1,   dashed: false, arrow: true,  flow: false },
+  flows_to:      { color: '#13C2C2', opacity: 0.6, width: 2,   dashed: false, arrow: true,  flow: true },
+};
 
-  for (const n of nodes) {
-    adj.set(n.id, []);
-    inDegree.set(n.id, 0);
-  }
-  for (const e of edges) {
-    adj.get(e.source)?.push(e.target);
-    inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
-  }
-
-  const queue: string[] = [];
-  for (const [id, deg] of inDegree.entries()) {
-    if (deg === 0) {
-      levels.set(id, 0);
-      queue.push(id);
-    }
-  }
-
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    const curLevel = levels.get(cur) || 0;
-    for (const next of adj.get(cur) || []) {
-      const nextLevel = levels.get(next);
-      if (nextLevel === undefined || nextLevel < curLevel + 1) {
-        levels.set(next, curLevel + 1);
-        queue.push(next);
-      }
-    }
-  }
-
-  let maxLevel = 0;
-  for (const l of levels.values()) maxLevel = Math.max(maxLevel, l);
-  for (const n of nodes) {
-    if (!levels.has(n.id)) {
-      levels.set(n.id, maxLevel + 1);
-    }
-  }
-
-  return levels;
-}
-
-/** Horizontal layered layout: 5 columns, evenly distributed vertically */
-function layoutHorizontal(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
-  const levels = computeNodeLevels(nodes, edges);
-
-  // Group by level
-  const levelGroups = new Map<number, GraphNode[]>();
-  for (const n of nodes) {
-    const lvl = levels.get(n.id) || 0;
-    if (!levelGroups.has(lvl)) levelGroups.set(lvl, []);
-    levelGroups.get(lvl)!.push(n);
-  }
-
-  // Map levels to columns (0-4)
-  const uniqueLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
-  const levelToCol = new Map<number, number>();
-  uniqueLevels.forEach((lvl, idx) => levelToCol.set(lvl, Math.min(idx, 4)));
-
-  const result: GraphNode[] = [];
-  const canvasH = 640;
-  const startX = 100; // left padding
-
-  for (const [lvl, group] of levelGroups.entries()) {
-    const col = levelToCol.get(lvl) || 0;
-    const count = group.length;
-    const x = startX + col * COL_SPACING;
-    // Evenly distribute vertically
-    const totalH = count * NODE_CARD_H + (count - 1) * 20;
-    const startY = (canvasH - totalH) / 2 + NODE_CARD_H / 2;
-
-    group.forEach((n, idx) => {
-      const y = startY + idx * (NODE_CARD_H + 20);
-      result.push({ ...n, x, y });
-    });
-  }
-
-  return result;
-}
+// Node dimensions for rendering
+const NODE_DIMS: Record<GraphNodeType, { w: number; h: number }> = {
+  intent:      { w: 140, h: 44 },
+  ontology:    { w: 120, h: 40 },
+  attribute:   { w: 80,  h: 24 },
+  data_source: { w: 100, h: 36 },
+  skill:       { w: 140, h: 40 },
+  constraint:  { w: 130, h: 40 },
+  simulation:  { w: 150, h: 48 },
+  result:      { w: 140, h: 48 },
+};
 
 /** Draw rounded rectangle path */
 function roundRect(
@@ -1322,462 +1258,718 @@ function roundRect(
   ctx.closePath();
 }
 
+/** Draw arrow head */
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  angle: number,
+  size: number,
+  color: string
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size * 0.5);
+  ctx.lineTo(-size, size * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+// ============================================================
+// 力导向引擎接口
+// ============================================================
+
+interface SimNode {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  mass: number;
+  pinned: boolean;
+  type: GraphNodeType;
+  label: string;
+  width: number;
+  height: number;
+  description: string;
+  details?: string[];
+  output?: string;
+}
+
+interface SimEdge {
+  id: string;
+  source: string;
+  target: string;
+  relationType: EdgeRelationType;
+}
+
+function getNodeMass(type: GraphNodeType): number {
+  if (type === 'ontology') return 3;
+  if (type === 'skill') return 2;
+  return 1;
+}
+
+function buildSimGraph(activeAgentId: string): { nodes: SimNode[]; edges: SimEdge[] } {
+  const raw = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
+  const nodeMap = new Map<string, SimNode>();
+  const simNodes: SimNode[] = [];
+
+  // Convert raw nodes to sim nodes
+  for (const n of raw.nodes) {
+    const dims = NODE_DIMS[n.type];
+    const simNode: SimNode = {
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      vx: 0,
+      vy: 0,
+      mass: getNodeMass(n.type),
+      pinned: false,
+      type: n.type,
+      label: n.label,
+      width: dims.w,
+      height: dims.h,
+      description: n.description,
+      details: n.details,
+      output: n.output,
+    };
+    simNodes.push(simNode);
+    nodeMap.set(n.id, simNode);
+  }
+
+  // Add attribute nodes for each ontology
+  let attrIdx = 0;
+  for (const n of raw.nodes) {
+    if (n.type === 'ontology' && n.attributes && n.attributes.length > 0) {
+      for (const attr of n.attributes) {
+        const attrId = `${n.id}-attr-${attrIdx++}`;
+        const attrNode: SimNode = {
+          id: attrId,
+          x: n.x + (Math.random() - 0.5) * 60,
+          y: n.y + 60 + Math.random() * 30,
+          vx: 0,
+          vy: 0,
+          mass: 1,
+          pinned: false,
+          type: 'attribute',
+          label: attr,
+          width: NODE_DIMS.attribute.w,
+          height: NODE_DIMS.attribute.h,
+          description: `${n.label} 的属性: ${attr}`,
+        };
+        simNodes.push(attrNode);
+        nodeMap.set(attrId, attrNode);
+      }
+    }
+  }
+
+  // Build edges
+  const simEdges: SimEdge[] = [];
+
+  // Original edges
+  for (const e of raw.edges) {
+    simEdges.push({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      relationType: e.relationType || 'depends_on',
+    });
+  }
+
+  // has_attribute edges
+  attrIdx = 0;
+  for (const n of raw.nodes) {
+    if (n.type === 'ontology' && n.attributes && n.attributes.length > 0) {
+      for (const _attr of n.attributes) {
+        const attrId = `${n.id}-attr-${attrIdx++}`;
+        simEdges.push({
+          id: `attr-${attrId}`,
+          source: n.id,
+          target: attrId,
+          relationType: 'has_attribute',
+        });
+      }
+    }
+  }
+
+  // consumes edges: skill -> data_source
+  for (const n of raw.nodes) {
+    if (n.type === 'skill' && n.dataSources && n.dataSources.length > 0) {
+      for (const dsId of n.dataSources) {
+        simEdges.push({
+          id: `consumes-${n.id}-${dsId}`,
+          source: n.id,
+          target: dsId,
+          relationType: 'consumes',
+        });
+      }
+    }
+  }
+
+  return { nodes: simNodes, edges: simEdges };
+}
+
+// ============================================================
+// BatteryReasoningGraph —— 力导向知识关系网络图
+// ============================================================
+
 function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const animationRef = React.useRef<number>(0);
+  const simRef = React.useRef<{ nodes: SimNode[]; edges: SimEdge[] } | null>(null);
+  const frameCountRef = React.useRef(0);
+  const convergedRef = React.useRef(false);
   const flowParticlesRef = React.useRef<{ edgeId: string; t: number; speed: number }[]>([]);
+  const entranceProgressRef = React.useRef(0);
+  const hoverNodeRef = React.useRef<string | null>(null);
+  const pinnedNodesRef = React.useRef<Set<string>>(new Set());
+  const [tooltipPos, setTooltipPos] = React.useState<{ x: number; y: number; node: SimNode } | null>(null);
 
-  // Pan / Zoom refs (not state, to avoid re-renders during interaction)
-  const panXRef = React.useRef(0);
-  const panYRef = React.useRef(0);
-  const zoomRef = React.useRef(1);
+  // View transform
+  const viewRef = React.useRef({ panX: 0, panY: 0, zoom: 1, targetZoom: 1 });
   const isDraggingRef = React.useRef(false);
+  const isPanningRef = React.useRef(false);
   const lastMouseRef = React.useRef<{ x: number; y: number } | null>(null);
   const [cursorStyle, setCursorStyle] = React.useState('grab');
 
-  // Entrance animation: each node has an animation progress (0~1)
-  const nodeAnimRef = React.useRef<Map<string, number>>(new Map());
-  const entranceStartRef = React.useRef(0);
+  const CSS_W = 840;
+  const CSS_H = 640;
 
-  const rawGraph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
-
-  // Horizontal layered layout: 5 columns
-  const graph = React.useMemo(() => {
-    return {
-      nodes: layoutHorizontal(rawGraph.nodes, rawGraph.edges),
-      edges: rawGraph.edges,
-    };
-  }, [activeAgentId, rawGraph]);
-  const { nodes, edges } = graph;
-
-  // Initialize entrance animation and flow particles
+  // Build simulation graph when agent changes
   React.useEffect(() => {
-    entranceStartRef.current = performance.now();
-    const animMap = new Map<string, number>();
-    for (const n of nodes) animMap.set(n.id, 0);
-    nodeAnimRef.current = animMap;
+    const sim = buildSimGraph(activeAgentId);
+    // Initialize positions around center with random spread
+    const cx = CSS_W / 2;
+    const cy = CSS_H / 2;
+    for (const n of sim.nodes) {
+      n.x = cx + (Math.random() - 0.5) * 200;
+      n.y = cy + (Math.random() - 0.5) * 200;
+      n.vx = 0;
+      n.vy = 0;
+      n.pinned = false;
+    }
+    simRef.current = sim;
+    frameCountRef.current = 0;
+    convergedRef.current = false;
+    entranceProgressRef.current = 0;
+    pinnedNodesRef.current = new Set();
+    hoverNodeRef.current = null;
+    setTooltipPos(null);
 
+    // Initialize flow particles for flows_to edges
     const particles: { edgeId: string; t: number; speed: number }[] = [];
-    for (const edge of edges) {
-      particles.push({ edgeId: edge.id, t: Math.random(), speed: 0.002 + Math.random() * 0.003 });
+    for (const edge of sim.edges) {
+      if (EDGE_STYLES[edge.relationType].flow) {
+        particles.push({ edgeId: edge.id, t: Math.random(), speed: 0.003 + Math.random() * 0.004 });
+      }
     }
     flowParticlesRef.current = particles;
-  }, [nodes, edges]);
+  }, [activeAgentId]);
 
-  // Auto-play: highlight nodes in BFS sequence every 1.5s
-  useEffect(() => {
-    const levels = computeNodeLevels(nodes, edges);
-    const sequence = [...nodes]
-      .sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0))
-      .map(n => n.id);
-    let idx = 0;
-    setActiveNodeId(sequence[0] || null);
-    const timer = setInterval(() => {
-      idx = (idx + 1) % sequence.length;
-      setActiveNodeId(sequence[idx]);
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [activeAgentId, nodes, edges]);
+  // Force-directed simulation step
+  const stepSimulation = React.useCallback(() => {
+    const sim = simRef.current;
+    if (!sim) return;
+    if (convergedRef.current) return;
 
-  // Canvas rendering + interactions
-  useEffect(() => {
+    const nodes = sim.nodes;
+    const edges = sim.edges;
+    const kRepulse = 150;
+    const kSpring = 0.05;
+    const kCenter = 0.01;
+    const idealLength = 120;
+    const cx = CSS_W / 2;
+    const cy = CSS_H / 2;
+
+    // Temperature (cooling)
+    const temp = Math.max(0.01, 1 - frameCountRef.current / 300);
+
+    // Repulsion (Coulomb)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = (kRepulse * a.mass * b.mass) / (dist * dist);
+        const fx = (dx / dist) * force * temp;
+        const fy = (dy / dist) * force * temp;
+        if (!a.pinned) { a.vx -= fx / a.mass; a.vy -= fy / a.mass; }
+        if (!b.pinned) { b.vx += fx / b.mass; b.vy += fy / b.mass; }
+      }
+    }
+
+    // Spring attraction (edges)
+    for (const edge of edges) {
+      const src = nodes.find(n => n.id === edge.source);
+      const tgt = nodes.find(n => n.id === edge.target);
+      if (!src || !tgt) continue;
+      const dx = tgt.x - src.x;
+      const dy = tgt.y - src.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = kSpring * (dist - idealLength) * temp;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      if (!src.pinned) { src.vx += fx / src.mass; src.vy += fy / src.mass; }
+      if (!tgt.pinned) { tgt.vx -= fx / tgt.mass; tgt.vy -= fy / tgt.mass; }
+    }
+
+    // Center gravity
+    for (const n of nodes) {
+      if (n.pinned) continue;
+      n.vx += (cx - n.x) * kCenter * temp;
+      n.vy += (cy - n.y) * kCenter * temp;
+    }
+
+    // Velocity damping + position update
+    let totalVelocity = 0;
+    for (const n of nodes) {
+      if (n.pinned) continue;
+      n.vx *= 0.9;
+      n.vy *= 0.9;
+      n.x += n.vx;
+      n.y += n.vy;
+      totalVelocity += Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+    }
+
+    frameCountRef.current++;
+
+    // Convergence check
+    if (frameCountRef.current > 300 || totalVelocity < 0.5) {
+      convergedRef.current = true;
+    }
+  }, []);
+
+  // Canvas rendering
+  React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const cssWidth = 840;
-    const cssHeight = 640;
-    canvas.width = cssWidth * dpr;
-    canvas.height = cssHeight * dpr;
-    canvas.style.width = cssWidth + 'px';
-    canvas.style.height = cssHeight + 'px';
+    canvas.width = CSS_W * dpr;
+    canvas.height = CSS_H * dpr;
+    canvas.style.width = CSS_W + 'px';
+    canvas.style.height = CSS_H + 'px';
     ctx.scale(dpr, dpr);
 
-    // Drag handlers
-    const handleMouseDown = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      let onNode = false;
-      const z = zoomRef.current;
-      const px = panXRef.current;
-      const py = panYRef.current;
-      for (const node of nodes) {
-        const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
-        const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
-        const nw = NODE_CARD_W * z;
-        const nh = NODE_CARD_H * z;
-        if (mx >= nsx - nw / 2 && mx <= nsx + nw / 2 && my >= nsy - nh / 2 && my <= nsy + nh / 2) {
-          onNode = true; break;
-        }
-      }
-      if (!onNode) {
-        isDraggingRef.current = true;
-        lastMouseRef.current = { x: e.clientX, y: e.clientY };
-        setCursorStyle('grabbing');
-      }
-    };
-
-    const handleMouseMoveDrag = (e: MouseEvent) => {
-      if (!isDraggingRef.current || !lastMouseRef.current) return;
-      const dx = e.clientX - lastMouseRef.current.x;
-      const dy = e.clientY - lastMouseRef.current.y;
-      panXRef.current += dx;
-      panYRef.current += dy;
-      lastMouseRef.current = { x: e.clientX, y: e.clientY };
-    };
-
-    const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      lastMouseRef.current = null;
-      setCursorStyle('grab');
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const oldZoom = zoomRef.current;
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      let newZoom = oldZoom * zoomFactor;
-      newZoom = Math.max(0.3, Math.min(3, newZoom));
-      const worldX = (mx - cssWidth / 2 - panXRef.current) / oldZoom + cssWidth / 2;
-      const worldY = (my - cssHeight / 2 - panYRef.current) / oldZoom + cssHeight / 2;
-      panXRef.current = mx - cssWidth / 2 - (worldX - cssWidth / 2) * newZoom;
-      panYRef.current = my - cssHeight / 2 - (worldY - cssHeight / 2) * newZoom;
-      zoomRef.current = newZoom;
-    };
-
-    canvas.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mousemove', handleMouseMoveDrag);
-    window.addEventListener('mouseup', handleMouseUp);
-    canvas.addEventListener('wheel', handleWheel, { passive: false });
-
     const toScreen = (wx: number, wy: number) => {
-      const z = zoomRef.current;
-      const px = panXRef.current;
-      const py = panYRef.current;
+      const v = viewRef.current;
       return {
-        x: (wx - cssWidth / 2) * z + cssWidth / 2 + px,
-        y: (wy - cssHeight / 2) * z + cssHeight / 2 + py,
+        x: (wx - CSS_W / 2) * v.zoom + CSS_W / 2 + v.panX,
+        y: (wy - CSS_H / 2) * v.zoom + CSS_H / 2 + v.panY,
       };
     };
 
-    // Lerp helper
-    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
     const render = () => {
-      const now = performance.now();
-      const z = zoomRef.current;
-      const px = panXRef.current;
-      const py = panYRef.current;
+      const sim = simRef.current;
+      if (!sim) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
 
-      // Clear with background color
+      // Run simulation step
+      stepSimulation();
+
+      // Entrance animation
+      if (entranceProgressRef.current < 1) {
+        entranceProgressRef.current = Math.min(1, entranceProgressRef.current + 0.02);
+      }
+
+      // Smooth zoom
+      const v = viewRef.current;
+      v.zoom += (v.targetZoom - v.zoom) * 0.1;
+
+      const nodes = sim.nodes;
+      const edges = sim.edges;
+      const hoveredId = hoverNodeRef.current;
+      const pinnedIds = pinnedNodesRef.current;
+
+      // Compute adjacency for highlighting
+      const adjMap = new Map<string, Set<string>>();
+      for (const n of nodes) adjMap.set(n.id, new Set());
+      for (const e of edges) {
+        adjMap.get(e.source)?.add(e.target);
+        adjMap.get(e.target)?.add(e.source);
+      }
+      const isAdjacent = (a: string, b: string) => adjMap.get(a)?.has(b) || false;
+
+      // Clear background
       ctx.fillStyle = '#F8FAFC';
-      ctx.fillRect(0, 0, cssWidth, cssHeight);
+      ctx.fillRect(0, 0, CSS_W, CSS_H);
 
-      // Subtle dot grid background
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.15)';
-      const dotSpacing = 24 * z;
-      const dotOffsetX = ((px % dotSpacing) + dotSpacing) % dotSpacing;
-      const dotOffsetY = ((py % dotSpacing) + dotSpacing) % dotSpacing;
-      const dotRadius = Math.max(0.5, 0.8 * z);
-      for (let gx = dotOffsetX; gx < cssWidth; gx += dotSpacing) {
-        for (let gy = dotOffsetY; gy < cssHeight; gy += dotSpacing) {
+      // Dot grid background
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
+      const dotSpacing = 20 * v.zoom;
+      const dotOffsetX = ((v.panX % dotSpacing) + dotSpacing) % dotSpacing;
+      const dotOffsetY = ((v.panY % dotSpacing) + dotSpacing) % dotSpacing;
+      const dotR = Math.max(0.5, 0.6 * v.zoom);
+      for (let gx = dotOffsetX; gx < CSS_W; gx += dotSpacing) {
+        for (let gy = dotOffsetY; gy < CSS_H; gy += dotSpacing) {
           ctx.beginPath();
-          ctx.arc(gx, gy, dotRadius, 0, Math.PI * 2);
+          ctx.arc(gx, gy, dotR, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      // Update entrance animation progress
-      const entranceElapsed = now - entranceStartRef.current;
-      const animMap = nodeAnimRef.current;
-      const levels = computeNodeLevels(nodes, edges);
-      for (const node of nodes) {
-        const lvl = levels.get(node.id) || 0;
-        const delay = lvl * 80; // stagger 80ms per level
-        const progress = Math.min(1, Math.max(0, (entranceElapsed - delay) / 300));
-        animMap.set(node.id, easeOutCubic(progress));
-      }
+      const entrance = 1 - Math.pow(1 - entranceProgressRef.current, 3);
 
-      // Compute edge visibility (only show when both endpoints have appeared)
-      const edgeVisible = (edge: GraphEdge) => {
-        const sp = animMap.get(edge.source) || 0;
-        const tp = animMap.get(edge.target) || 0;
-        return sp >= 1 && tp >= 1;
-      };
-
-      // ===== Draw edges (Bezier curves) =====
-      edges.forEach(edge => {
-        if (!edgeVisible(edge)) return;
+      // ===== Draw edges =====
+      for (const edge of edges) {
         const src = nodes.find(n => n.id === edge.source);
         const tgt = nodes.find(n => n.id === edge.target);
-        if (!src || !tgt) return;
+        if (!src || !tgt) continue;
 
-        const isSourceActive = activeNodeId === src.id;
-        const isTargetActive = activeNodeId === tgt.id;
-        const isEdgeActive = isSourceActive || isTargetActive;
+        const style = EDGE_STYLES[edge.relationType];
+        const s1 = toScreen(src.x, src.y);
+        const s2 = toScreen(tgt.x, tgt.y);
 
-        const sSrc = toScreen(src.x, src.y);
-        const sTgt = toScreen(tgt.x, tgt.y);
+        // Determine if edge should be highlighted
+        const isHoveredEdge = hoveredId && (hoveredId === src.id || hoveredId === tgt.id);
+        const isDimmed = hoveredId && !isHoveredEdge && !isAdjacent(hoveredId, src.id) && !isAdjacent(hoveredId, tgt.id);
 
-        const srcColor = NODE_TYPE_COLORS[src.type];
-        const edgeAlpha = isEdgeActive ? 0.9 : 0.4;
-        const edgeWidth = isEdgeActive ? 2.5 : 1.5;
+        const alpha = isDimmed ? 0.08 : isHoveredEdge ? style.opacity * 1.8 : style.opacity;
+        const lineWidth = isHoveredEdge ? style.width * 1.8 : style.width;
 
-        // Card boundary clipping for edge endpoints
-        const dx = sTgt.x - sSrc.x;
-        const dy = sTgt.y - sSrc.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 1) return;
+        // Compute intersection with node bounds
+        const dx = s2.x - s1.x;
+        const dy = s2.y - s1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const nx = dx / dist;
         const ny = dy / dist;
 
-        const nw = NODE_CARD_W * z;
-        const nh = NODE_CARD_H * z;
-        const halfW = nw / 2;
-        const halfH = nh / 2;
+        const srcW = src.width * v.zoom * 0.5;
+        const srcH = src.height * v.zoom * 0.5;
+        const tgtW = tgt.width * v.zoom * 0.5;
+        const tgtH = tgt.height * v.zoom * 0.5;
 
-        // Compute exit point from source card (right side)
-        const sx = sSrc.x + halfW;
-        const sy = sSrc.y + ny * Math.min(halfH, Math.abs(dy) * 0.3);
-
-        // Compute entry point to target card (left side)
-        const tx = sTgt.x - halfW;
-        const ty = sTgt.y - ny * Math.min(halfH, Math.abs(dy) * 0.3);
-
-        // Control points for cubic bezier
-        const cp1x = sx + Math.abs(tx - sx) * 0.5;
-        const cp1y = sy;
-        const cp2x = tx - Math.abs(tx - sx) * 0.5;
-        const cp2y = ty;
+        // Simple bounding box intersection
+        const startX = s1.x + nx * srcW;
+        const startY = s1.y + ny * srcH;
+        const endX = s2.x - nx * (tgtW + (style.arrow ? 10 * v.zoom : 0));
+        const endY = s2.y - ny * (tgtH + (style.arrow ? 10 * v.zoom : 0));
 
         ctx.save();
-
-        // Draw bezier curve
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
-        ctx.strokeStyle = hexToRgba(srcColor, edgeAlpha);
-        ctx.lineWidth = edgeWidth;
+        ctx.globalAlpha = alpha * entrance;
+        ctx.strokeStyle = style.color;
+        ctx.lineWidth = lineWidth * v.zoom;
         ctx.lineCap = 'round';
+        if (style.dashed) {
+          ctx.setLineDash([4 * v.zoom, 4 * v.zoom]);
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
         ctx.stroke();
+
+        // Arrow
+        if (style.arrow) {
+          const angle = Math.atan2(dy, dx);
+          drawArrow(ctx, endX, endY, angle, 6 * v.zoom, style.color);
+        }
 
         ctx.restore();
 
-        // Store curve params for particle animation
-        (edge as any)._curve = { sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty };
-      });
+        // Store for flow particles
+        (edge as any)._line = { sx: startX, sy: startY, ex: endX, ey: endY };
+      }
 
-      // ===== Flowing light particles along edges =====
+      // ===== Flow particles =====
       const particles = flowParticlesRef.current;
       for (const p of particles) {
         const edge = edges.find(e => e.id === p.edgeId);
         if (!edge) continue;
-        if (!edgeVisible(edge)) continue;
-        const curve = (edge as any)._curve;
-        if (!curve) continue;
+        const line = (edge as any)._line;
+        if (!line) continue;
 
         p.t += p.speed;
         if (p.t > 1) p.t = 0;
 
-        const t = p.t;
-        // Cubic bezier point calculation
-        const mt = 1 - t;
-        const px = mt * mt * mt * curve.sx + 3 * mt * mt * t * curve.cp1x + 3 * mt * t * t * curve.cp2x + t * t * t * curve.tx;
-        const py = mt * mt * mt * curve.sy + 3 * mt * mt * t * curve.cp1y + 3 * mt * t * t * curve.cp2y + t * t * t * curve.ty;
+        const px2 = line.sx + (line.ex - line.sx) * p.t;
+        const py2 = line.sy + (line.ey - line.sy) * p.t;
 
-        const src = nodes.find(n => n.id === edge.source);
-        if (!src) continue;
-        const srcColor = NODE_TYPE_COLORS[src.type];
+        const isDimmed = hoveredId && hoveredId !== edge.source && hoveredId !== edge.target &&
+          !isAdjacent(hoveredId, edge.source) && !isAdjacent(hoveredId, edge.target);
 
         ctx.save();
-        // Glow effect
-        ctx.shadowColor = srcColor;
-        ctx.shadowBlur = 8 * z;
+        ctx.globalAlpha = isDimmed ? 0.1 : 0.9 * entrance;
         ctx.beginPath();
-        ctx.arc(px, py, Math.max(2, 2.5 * z), 0, Math.PI * 2);
+        ctx.arc(px2, py2, Math.max(2, 3 * v.zoom), 0, Math.PI * 2);
         ctx.fillStyle = '#FFFFFF';
         ctx.fill();
-        // Inner core
-        ctx.shadowBlur = 0;
         ctx.beginPath();
-        ctx.arc(px, py, Math.max(1.2, 1.5 * z), 0, Math.PI * 2);
-        ctx.fillStyle = srcColor;
+        ctx.arc(px2, py2, Math.max(1.5, 2 * v.zoom), 0, Math.PI * 2);
+        ctx.fillStyle = EDGE_STYLES.flows_to.color;
         ctx.fill();
         ctx.restore();
       }
 
-      // ===== Draw nodes (card style) =====
-      // Sort by level so lower levels render on top
-      const sortedNodes = [...nodes].sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0));
-
-      sortedNodes.forEach(node => {
-        const animProgress = animMap.get(node.id) || 0;
-        if (animProgress <= 0) return;
-
-        const isActive = activeNodeId === node.id;
-        const isHovered = hoveredNode === node.id;
-        const color = NODE_TYPE_COLORS[node.type];
+      // ===== Draw nodes =====
+      for (const node of nodes) {
+        const isHovered = hoveredId === node.id;
+        const isPinned = pinnedIds.has(node.id);
+        const isDimmed = hoveredId && hoveredId !== node.id && !isAdjacent(hoveredId, node.id);
 
         const pos = toScreen(node.x, node.y);
-        const nsx = pos.x;
-        const nsy = pos.y;
-
-        // Entrance animation: opacity + translateY
-        const nodeOpacity = animProgress;
-        const nodeOffsetY = (1 - animProgress) * 12 * z;
-
-        // Hover: float up 3px + enhanced shadow
-        const hoverLift = isHovered ? -3 * z : 0;
-        const finalY = nsy + nodeOffsetY + hoverLift;
-
-        const nw = NODE_CARD_W * z;
-        const nh = NODE_CARD_H * z;
+        const nw = node.width * v.zoom;
+        const nh = node.height * v.zoom;
         const halfW = nw / 2;
         const halfH = nh / 2;
-        const r = 8 * z; // border radius
+
+        // Entrance: scale from center + fade in
+        const nodeScale = 0.5 + 0.5 * entrance;
+        const nodeOpacity = entrance;
+        const hoverScale = isHovered ? 1.1 : 1;
+        const finalScale = nodeScale * hoverScale;
+        const finalW = nw * finalScale / nodeScale;
+        const finalH = nh * finalScale / nodeScale;
+        const finalHalfW = finalW / 2;
+        const finalHalfH = finalH / 2;
 
         ctx.save();
-        ctx.globalAlpha = nodeOpacity;
+        ctx.globalAlpha = isDimmed ? 0.15 : nodeOpacity;
+
+        const color = NODE_TYPE_COLORS[node.type];
+        const r = node.type === 'attribute' ? 4 * v.zoom : 8 * v.zoom;
 
         // Shadow
         ctx.save();
-        ctx.shadowColor = isHovered ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.08)';
-        ctx.shadowBlur = isHovered ? 12 * z : 4 * z;
+        ctx.shadowColor = isHovered ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.08)';
+        ctx.shadowBlur = isHovered ? 16 * v.zoom : 6 * v.zoom;
         ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = isHovered ? 6 * z : 2 * z;
+        ctx.shadowOffsetY = isHovered ? 8 * v.zoom : 3 * v.zoom;
 
-        // Card background (white)
-        ctx.fillStyle = '#FFFFFF';
-        roundRect(ctx, nsx - halfW, finalY - halfH, nw, nh, r);
+        // Card background
+        if (node.type === 'attribute') {
+          ctx.fillStyle = '#E6F4FF';
+        } else {
+          ctx.fillStyle = '#FFFFFF';
+        }
+        roundRect(ctx, pos.x - finalHalfW, pos.y - finalHalfH, finalW, finalH, r);
         ctx.fill();
         ctx.restore();
 
-        // Left color bar (4px wide)
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(nsx - halfW, finalY - halfH);
-        ctx.lineTo(nsx - halfW + 4 * z, finalY - halfH);
-        ctx.lineTo(nsx - halfW + 4 * z, finalY + halfH);
-        ctx.lineTo(nsx - halfW, finalY + halfH);
-        ctx.closePath();
-        ctx.fill();
+        // Left color bar (4px) for non-attribute nodes
+        const barW = node.type !== 'attribute' ? Math.max(2, 4 * v.zoom) : 0;
+        if (node.type !== 'attribute') {
+          ctx.fillStyle = color;
+          roundRect(ctx, pos.x - finalHalfW, pos.y - finalHalfH, barW, finalH, Math.min(r, barW / 2));
+          ctx.fill();
+        }
 
-        // Active indicator: subtle glow border
-        if (isActive) {
+        // Pinned indicator
+        if (isPinned) {
           ctx.save();
-          ctx.strokeStyle = hexToRgba(color, 0.5);
-          ctx.lineWidth = 2 * z;
-          roundRect(ctx, nsx - halfW - 1 * z, finalY - halfH - 1 * z, nw + 2 * z, nh + 2 * z, r + 1 * z);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2 * v.zoom;
+          roundRect(ctx, pos.x - finalHalfW - 2 * v.zoom, pos.y - finalHalfH - 2 * v.zoom, finalW + 4 * v.zoom, finalH + 4 * v.zoom, r + 2 * v.zoom);
           ctx.stroke();
           ctx.restore();
         }
 
-        // Label text (14px -> scaled)
+        // Hover glow
+        if (isHovered) {
+          ctx.save();
+          ctx.strokeStyle = hexToRgba(color, 0.4);
+          ctx.lineWidth = 2 * v.zoom;
+          roundRect(ctx, pos.x - finalHalfW - 1 * v.zoom, pos.y - finalHalfH - 1 * v.zoom, finalW + 2 * v.zoom, finalH + 2 * v.zoom, r + 1 * v.zoom);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Label
         ctx.save();
-        ctx.fillStyle = '#1F2937';
-        ctx.font = `500 ${Math.max(10, 14 * z)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-        ctx.textAlign = 'left';
+        const fontSize = node.type === 'attribute'
+          ? Math.max(8, 10 * v.zoom)
+          : Math.max(10, 12 * v.zoom);
+        ctx.font = `500 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const textX = nsx - halfW + 10 * z;
-        const textY = finalY - 2 * z;
-        const maxTextW = nw - 14 * z;
+        ctx.fillStyle = node.type === 'attribute' ? color : '#1F2937';
+
         let displayLabel = node.label;
+        const maxTextW = finalW - (node.type === 'attribute' ? 8 * v.zoom : 16 * v.zoom);
         if (ctx.measureText(displayLabel).width > maxTextW) {
           while (ctx.measureText(displayLabel + '...').width > maxTextW && displayLabel.length > 0) {
             displayLabel = displayLabel.slice(0, -1);
           }
           displayLabel += '...';
         }
-        ctx.fillText(displayLabel, textX, textY);
+        ctx.fillText(displayLabel, pos.x + (node.type === 'attribute' ? 0 : 2 * v.zoom), pos.y);
         ctx.restore();
 
-        // Sublabel (type label, 10px)
-        ctx.save();
-        ctx.fillStyle = '#6B7280';
-        ctx.font = `400 ${Math.max(8, 10 * z)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        const sublabel = NODE_TYPE_CONFIG[node.type].label;
-        ctx.fillText(sublabel, textX, finalY + 12 * z);
-        ctx.restore();
+        // Icon for non-attribute nodes (first letter as icon)
+        if (node.type !== 'attribute') {
+          ctx.save();
+          const iconSize = Math.max(10, 14 * v.zoom);
+          const iconX = pos.x - finalHalfW + barW + 6 * v.zoom;
+          const iconY = pos.y;
+          ctx.font = `600 ${iconSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = color;
+          const iconChar = NODE_TYPE_CONFIG[node.type].icon === 'database' ? 'D'
+            : NODE_TYPE_CONFIG[node.type].icon === 'wrench' ? 'S'
+            : NODE_TYPE_CONFIG[node.type].icon === 'shield' ? 'C'
+            : NODE_TYPE_CONFIG[node.type].icon === 'play' ? 'P'
+            : NODE_TYPE_CONFIG[node.type].icon === 'file' ? 'R'
+            : NODE_TYPE_CONFIG[node.type].icon === 'brain' ? 'I'
+            : 'N';
+          ctx.fillText(iconChar, iconX, iconY);
+          ctx.restore();
+        }
 
         ctx.restore();
-      });
+      }
 
       animationRef.current = requestAnimationFrame(render);
     };
 
     render();
-    return () => {
-      cancelAnimationFrame(animationRef.current);
-      canvas.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mousemove', handleMouseMoveDrag);
-      window.removeEventListener('mouseup', handleMouseUp);
-      canvas.removeEventListener('wheel', handleWheel);
-    };
-  }, [nodes, edges, activeNodeId, hoveredNode]);
+    return () => cancelAnimationFrame(animationRef.current);
+  }, [stepSimulation]);
 
-  // Mouse interaction (hover detection)
+  // Mouse event handlers
+  const getMouseWorldPos = (mx: number, my: number) => {
+    const v = viewRef.current;
+    return {
+      x: (mx - CSS_W / 2 - v.panX) / v.zoom + CSS_W / 2,
+      y: (my - CSS_H / 2 - v.panY) / v.zoom + CSS_H / 2,
+    };
+  };
+
+  const findNodeAt = (mx: number, my: number): SimNode | null => {
+    const sim = simRef.current;
+    if (!sim) return null;
+    const v = viewRef.current;
+    for (let i = sim.nodes.length - 1; i >= 0; i--) {
+      const n = sim.nodes[i];
+      const pos = {
+        x: (n.x - CSS_W / 2) * v.zoom + CSS_W / 2 + v.panX,
+        y: (n.y - CSS_H / 2) * v.zoom + CSS_H / 2 + v.panY,
+      };
+      const nw = n.width * v.zoom;
+      const nh = n.height * v.zoom;
+      if (mx >= pos.x - nw / 2 && mx <= pos.x + nw / 2 && my >= pos.y - nh / 2 && my <= pos.y + nh / 2) {
+        return n;
+      }
+    }
+    return null;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const node = findNodeAt(mx, my);
+
+    if (node) {
+      // Toggle pin
+      const pinned = pinnedNodesRef.current;
+      if (pinned.has(node.id)) {
+        pinned.delete(node.id);
+        node.pinned = false;
+      } else {
+        pinned.add(node.id);
+        node.pinned = true;
+      }
+      pinnedNodesRef.current = new Set(pinned);
+      // Wake up simulation briefly
+      convergedRef.current = false;
+      frameCountRef.current = Math.min(frameCountRef.current, 200);
+    } else {
+      isPanningRef.current = true;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      setCursorStyle('grabbing');
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    const z = zoomRef.current;
-    const px = panXRef.current;
-    const py = panYRef.current;
-    const cssWidth = 840;
-    const cssHeight = 640;
-
-    let found: GraphNode | null = null;
-    for (const node of nodes) {
-      const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
-      const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
-      const nw = NODE_CARD_W * z;
-      const nh = NODE_CARD_H * z;
-      const halfW = nw / 2;
-      const halfH = nh / 2;
-      if (mx >= nsx - halfW && mx <= nsx + halfW && my >= nsy - halfH && my <= nsy + halfH) {
-        found = node;
-        break;
-      }
+    // Pan handling
+    if (isPanningRef.current && lastMouseRef.current) {
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      viewRef.current.panX += dx;
+      viewRef.current.panY += dy;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      return;
     }
 
-    if (found) {
-      setHoveredNode(found.id);
-      setTooltipPos({ x: mx + 16, y: my - 8 });
+    // Hover detection
+    const node = findNodeAt(mx, my);
+    if (node) {
+      hoverNodeRef.current = node.id;
+      setTooltipPos({ x: mx + 16, y: my - 8, node });
       setCursorStyle('pointer');
     } else {
-      setHoveredNode(null);
+      hoverNodeRef.current = null;
       setTooltipPos(null);
-      setCursorStyle(isDraggingRef.current ? 'grabbing' : 'grab');
+      setCursorStyle(isPanningRef.current ? 'grabbing' : 'grab');
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanningRef.current = false;
+    lastMouseRef.current = null;
+    setCursorStyle('grab');
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const v = viewRef.current;
+    const oldZoom = v.zoom;
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    let newZoom = oldZoom * zoomFactor;
+    newZoom = Math.max(0.3, Math.min(3, newZoom));
+    const worldX = (mx - CSS_W / 2 - v.panX) / oldZoom + CSS_W / 2;
+    const worldY = (my - CSS_H / 2 - v.panY) / oldZoom + CSS_H / 2;
+    v.panX = mx - CSS_W / 2 - (worldX - CSS_W / 2) * newZoom;
+    v.panY = my - CSS_H / 2 - (worldY - CSS_H / 2) * newZoom;
+    v.targetZoom = newZoom;
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const node = findNodeAt(mx, my);
+    if (!node) {
+      // Reset view
+      viewRef.current = { panX: 0, panY: 0, zoom: 1, targetZoom: 1 };
     }
   };
 
   const handleMouseLeave = () => {
-    setHoveredNode(null);
+    hoverNodeRef.current = null;
     setTooltipPos(null);
+    isPanningRef.current = false;
     setCursorStyle('grab');
   };
 
-  const hoveredNodeData = hoveredNode ? nodes.find(n => n.id === hoveredNode) : null;
-
   // Stats
-  const skillCount = nodes.filter(n => n.type === 'skill').length;
-  const dataCount = nodes.filter(n => n.type === 'data').length;
-  const ontologyCount = nodes.filter(n => n.type === 'ontology').length;
-  const totalNodes = nodes.length;
+  const sim = simRef.current;
+  const skillCount = sim ? sim.nodes.filter(n => n.type === 'skill').length : 0;
+  const dataCount = sim ? sim.nodes.filter(n => n.type === 'data_source').length : 0;
+  const ontologyCount = sim ? sim.nodes.filter(n => n.type === 'ontology').length : 0;
+  const totalNodes = sim ? sim.nodes.length : 0;
 
   return (
     <div className="space-y-4">
@@ -1788,47 +1980,54 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         </div>
         <div className="flex items-center gap-3">
           {/* Legend */}
-          <div className="flex items-center gap-2">
-            {(Object.entries(NODE_TYPE_CONFIG) as [GraphNodeType, typeof NODE_TYPE_CONFIG['intent']][]).map(([type, cfg]) => (
+          <div className="flex items-center gap-2 flex-wrap">
+            {(['ontology', 'attribute', 'data_source', 'skill', 'constraint', 'result'] as GraphNodeType[]).map(type => (
               <div key={type} className="flex items-center gap-1">
-                <div className="w-2 h-3 rounded-sm" style={{ backgroundColor: cfg.color }} />
-                <span className="text-[10px] text-gray-500">{cfg.label}</span>
+                <div className="w-2 h-3 rounded-sm" style={{ backgroundColor: NODE_TYPE_CONFIG[type].color }} />
+                <span className="text-[10px] text-gray-500">{NODE_TYPE_CONFIG[type].label}</span>
               </div>
             ))}
           </div>
-          <span className="text-[10px] text-gray-400">自动轮播演示中...</span>
+          <span className="text-[10px] text-gray-400">力导向布局</span>
         </div>
       </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden relative" style={{ height: 640 }}>
+      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden relative" style={{ height: CSS_H }}>
         <canvas
           ref={canvasRef}
+          onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
-          style={{ width: 840, height: 640, cursor: cursorStyle }}
+          onWheel={handleWheel}
+          onDoubleClick={handleDoubleClick}
+          style={{ width: CSS_W, height: CSS_H, cursor: cursorStyle }}
         />
 
-        {/* Rich tooltip */}
-        {hoveredNodeData && tooltipPos && (
+        {/* Tooltip */}
+        {tooltipPos && (
           <div
             className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-3 pointer-events-none"
             style={{
-              left: Math.min(tooltipPos.x, 520),
-              top: Math.max(tooltipPos.y - 100, 4),
+              left: Math.min(tooltipPos.x, CSS_W - 300),
+              top: Math.max(tooltipPos.y - 80, 4),
               maxWidth: 280,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-1 h-4 rounded-sm" style={{ backgroundColor: NODE_TYPE_COLORS[hoveredNodeData.type] }} />
-              <span className="text-xs font-bold text-gray-900">{hoveredNodeData.label}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: NODE_TYPE_COLORS[hoveredNodeData.type] }}>
-                {NODE_TYPE_CONFIG[hoveredNodeData.type].label}
+              <div className="w-1 h-4 rounded-sm" style={{ backgroundColor: NODE_TYPE_COLORS[tooltipPos.node.type] }} />
+              <span className="text-xs font-bold text-gray-900">{tooltipPos.node.label}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: NODE_TYPE_COLORS[tooltipPos.node.type] }}>
+                {NODE_TYPE_CONFIG[tooltipPos.node.type].label}
               </span>
+              {pinnedNodesRef.current.has(tooltipPos.node.id) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">已固定</span>
+              )}
             </div>
-            <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">{hoveredNodeData.description}</p>
-            {hoveredNodeData.details && hoveredNodeData.details.length > 0 && (
+            <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">{tooltipPos.node.description}</p>
+            {tooltipPos.node.details && tooltipPos.node.details.length > 0 && (
               <div className="space-y-1">
-                {hoveredNodeData.details.map((d, i) => (
+                {tooltipPos.node.details.map((d, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <div className="w-1 h-1 rounded-full bg-gray-400" />
                     <span className="text-[10px] text-gray-500">{d}</span>
@@ -1836,9 +2035,9 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                 ))}
               </div>
             )}
-            {hoveredNodeData.output && (
+            {tooltipPos.node.output && (
               <div className="mt-2 p-1.5 bg-emerald-50 border border-emerald-200 rounded text-[10px] text-emerald-700">
-                {hoveredNodeData.output}
+                {tooltipPos.node.output}
               </div>
             )}
           </div>

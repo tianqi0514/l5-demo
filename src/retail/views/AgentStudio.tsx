@@ -909,7 +909,7 @@ export default function AgentStudio() {
 // 推演知识图谱组件 - 展示Agent完整推演流程 (Network Graph)
 // ============================================================
 
-type NodeType = 'intent' | 'ontology' | 'data' | 'skill' | 'constraint' | 'simulation' | 'result';
+type NodeType = 'intent' | 'ontology' | 'attribute' | 'data_source' | 'data' | 'skill' | 'constraint' | 'simulation' | 'result';
 
 interface GraphNode {
   id: string;
@@ -933,26 +933,6 @@ interface GraphEdge {
   target: string;
   label?: string;
 }
-
-const NODE_TYPE_CONFIG: Record<NodeType, { color: string; bg: string; border: string; glow: string; shape: string }> = {
-  intent:    { color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', glow: 'rgba(124,58,237,0.35)', shape: 'roundRect' },
-  ontology:  { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', glow: 'rgba(37,99,235,0.35)', shape: 'circle' },
-  data:      { color: '#0891B2', bg: '#ECFEFF', border: '#A5F3FC', glow: 'rgba(8,145,178,0.35)', shape: 'diamond' },
-  skill:     { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', glow: 'rgba(217,119,6,0.35)', shape: 'roundRect' },
-  constraint:{ color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', glow: 'rgba(220,38,38,0.35)', shape: 'roundRect' },
-  simulation:{ color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE', glow: 'rgba(79,70,229,0.35)', shape: 'roundRect' },
-  result:    { color: '#059669', bg: '#ECFDF5', border: '#A7F3D0', glow: 'rgba(5,150,105,0.35)', shape: 'roundRect' },
-};
-
-const TYPE_ICON: Record<NodeType, any> = {
-  intent: BrainCircuit,
-  ontology: Database,
-  data: ArrowRight,
-  skill: Wrench,
-  constraint: ShieldCheck,
-  simulation: MonitorPlay,
-  result: CheckCircle2,
-};
 
 function buildAgentGraph(agentId: string): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const configs: Record<string, { nodes: GraphNode[]; edges: GraphEdge[] }> = {
@@ -1087,576 +1067,815 @@ function buildAgentGraph(agentId: string): { nodes: GraphNode[]; edges: GraphEdg
   return configs[agentId] || configs.a1;
 }
 
-function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [autoPlay, setAutoPlay] = useState(true);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  const [zoom, setZoom] = useState(1.0);
-  const [isDragging, setIsDragging] = useState(false);
-  const [enteredNodes, setEnteredNodes] = useState<Set<string>>(new Set());
-  const [enteredEdges, setEnteredEdges] = useState<Set<string>>(new Set());
-  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-  const svgRef = React.useRef<SVGSVGElement>(null);
+// ============================================================
+// 推演知识图谱组件 - 力导向知识关系网络图
+// ============================================================
 
-  const graph = React.useMemo(() => buildAgentGraph(activeAgentId), [activeAgentId]);
-  const { nodes: rawNodes, edges } = graph;
+interface ForceNode {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  mass: number;
+  pinned: boolean;
+  opacity: number;
+  label: string;
+  sublabel?: string;
+  type: NodeType;
+  skills?: string[];
+  dataSources?: string[];
+  ontologies?: string[];
+  description?: string;
+  output?: string;
+  width: number;
+  height: number;
+}
 
-  // ============================================================
-  // Horizontal layered layout: 5 columns left-to-right
-  // ============================================================
-  const COLUMN_X = [80, 260, 440, 620, 800];
-  const COLUMN_SPACING = 180;
-  const NODE_W = 140;
-  const NODE_H = 52;
-  const NODE_GAP = 64;
+interface ForceEdge {
+  id: string;
+  source: string;
+  target: string;
+  relationType: string;
+  idealLength: number;
+  label?: string;
+}
 
-  const TYPE_BAR_COLOR: Record<NodeType, string> = {
-    intent: '#722ED1',
-    ontology: '#1677FF',
-    data: '#13C2C2',
-    skill: '#FA8C16',
-    constraint: '#F5222D',
-    simulation: '#2F54EB',
-    result: '#52C41A',
-  };
+const NODE_TYPE_CONFIG: Record<string, { color: string; bg: string; barColor: string; icon: any; mass: number; width: number; height: number; shape: string }> = {
+  ontology:   { color: '#1677FF', bg: '#FFFFFF', barColor: '#1677FF', icon: Database, mass: 3, width: 120, height: 40, shape: 'roundRect' },
+  attribute:  { color: '#1677FF', bg: '#E6F4FF', barColor: '#1677FF', icon: Database, mass: 1, width: 80, height: 28, shape: 'ellipse' },
+  data_source:{ color: '#13C2C2', bg: '#FFFFFF', barColor: '#13C2C2', icon: Database, mass: 2, width: 120, height: 40, shape: 'roundRect' },
+  skill:      { color: '#FA8C16', bg: '#FFFFFF', barColor: '#FA8C16', icon: Wrench, mass: 2, width: 120, height: 40, shape: 'roundRect' },
+  constraint: { color: '#F5222D', bg: '#FFFFFF', barColor: '#F5222D', icon: ShieldCheck, mass: 1.5, width: 110, height: 40, shape: 'roundRect' },
+  result:     { color: '#52C41A', bg: '#FFFFFF', barColor: '#52C41A', icon: CheckCircle2, mass: 2, width: 130, height: 44, shape: 'roundRect' },
+  intent:     { color: '#722ED1', bg: '#FFFFFF', barColor: '#722ED1', icon: BrainCircuit, mass: 2.5, width: 140, height: 48, shape: 'roundRect' },
+  simulation: { color: '#4F46E5', bg: '#FFFFFF', barColor: '#4F46E5', icon: MonitorPlay, mass: 2, width: 140, height: 52, shape: 'roundRect' },
+  data:       { color: '#0891B2', bg: '#ECFEFF', barColor: '#0891B2', icon: ArrowRight, mass: 1.5, width: 100, height: 44, shape: 'diamond' },
+};
 
-  // BFS to compute layer for each node (0-4)
-  const { nodes, topoOrder, layerMap } = React.useMemo(() => {
-    const lMap = new Map<string, number>();
-    const intentNode = rawNodes.find(n => n.type === 'intent');
-    if (!intentNode) return { nodes: rawNodes, topoOrder: [] as string[], layerMap: lMap };
+const EDGE_TYPE_CONFIG: Record<string, { color: string; opacity: number; width: number; dashed: boolean; hasArrow: boolean; animated: boolean }> = {
+  has_attribute: { color: '#94A3B8', opacity: 0.4, width: 1, dashed: true, hasArrow: false, animated: false },
+  bound_to:      { color: '#13C2C2', opacity: 0.5, width: 1.5, dashed: true, hasArrow: true, animated: false },
+  consumes:      { color: '#FA8C16', opacity: 0.5, width: 1.5, dashed: false, hasArrow: true, animated: false },
+  constrains:    { color: '#EF4444', opacity: 0.5, width: 1.5, dashed: false, hasArrow: true, animated: false },
+  produces:      { color: '#10B981', opacity: 0.5, width: 1.5, dashed: false, hasArrow: true, animated: false },
+  depends_on:    { color: '#94A3B8', opacity: 0.4, width: 1, dashed: false, hasArrow: true, animated: false },
+  flows_to:      { color: '#13C2C2', opacity: 0.6, width: 2, dashed: false, hasArrow: true, animated: true },
+  default:       { color: '#94A3B8', opacity: 0.4, width: 1, dashed: false, hasArrow: true, animated: false },
+};
 
-    // BFS from intent
-    const queue: string[] = [intentNode.id];
-    lMap.set(intentNode.id, 0);
-    while (queue.length > 0) {
-      const curr = queue.shift()!;
-      const currLayer = lMap.get(curr)!;
-      edges.filter(e => e.source === curr).forEach(e => {
-        if (!lMap.has(e.target) || lMap.get(e.target)! > currLayer + 1) {
-          lMap.set(e.target, currLayer + 1);
-          queue.push(e.target);
+function mapEdgeType(label?: string): string {
+  if (!label) return 'default';
+  const l = label.toLowerCase();
+  if (l.includes('绑定') || l.includes('bound')) return 'bound_to';
+  if (l.includes('输入') || l.includes('消费') || l.includes('consume')) return 'consumes';
+  if (l.includes('校验') || l.includes('约束') || l.includes('constrain')) return 'constrains';
+  if (l.includes('输出') || l.includes('产出') || l.includes('produce')) return 'produces';
+  if (l.includes('依赖') || l.includes('depend')) return 'depends_on';
+  if (l.includes('流向') || l.includes('flow')) return 'flows_to';
+  if (l.includes('解析') || l.includes('属性') || l.includes('attribute')) return 'has_attribute';
+  return 'default';
+}
+
+function buildForceGraph(agentId: string): { nodes: ForceNode[]; edges: ForceEdge[] } {
+  const raw = buildAgentGraph(agentId);
+  const nodeMap = new Map<string, ForceNode>();
+  const edges: ForceEdge[] = [];
+  const edgeIdSet = new Set<string>();
+
+  // Convert raw nodes to force nodes
+  raw.nodes.forEach(n => {
+    const cfg = NODE_TYPE_CONFIG[n.type] || NODE_TYPE_CONFIG.ontology;
+    const w = n.width || cfg.width;
+    const h = n.height || cfg.height;
+    nodeMap.set(n.id, {
+      id: n.id,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      mass: cfg.mass,
+      pinned: false,
+      opacity: 0,
+      label: n.label,
+      sublabel: n.sublabel,
+      type: n.type,
+      skills: n.skills,
+      dataSources: n.dataSources,
+      ontologies: n.ontologies,
+      description: n.description,
+      output: n.output,
+      width: w,
+      height: h,
+    });
+  });
+
+  // Convert raw edges
+  raw.edges.forEach(e => {
+    const relType = mapEdgeType(e.label);
+    edges.push({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      relationType: relType,
+      idealLength: relType === 'has_attribute' ? 80 : (relType === 'bound_to' ? 100 : 120),
+      label: e.label,
+    });
+  });
+
+  // Generate extra has_attribute edges from ontologies to their attributes
+  // Also generate extra consumes edges from skills to dataSources
+  raw.nodes.forEach(n => {
+    if (n.type === 'ontology' && n.skills && n.skills.length > 0) {
+      n.skills.forEach((skillName, idx) => {
+        const attrId = `attr_${n.id}_${idx}`;
+        if (!nodeMap.has(attrId)) {
+          const cfg = NODE_TYPE_CONFIG.attribute;
+          nodeMap.set(attrId, {
+            id: attrId,
+            x: 0, y: 0, vx: 0, vy: 0,
+            mass: cfg.mass,
+            pinned: false,
+            opacity: 0,
+            label: skillName,
+            type: 'attribute',
+            width: cfg.width,
+            height: cfg.height,
+          });
+        }
+        const edgeId = `ea_${n.id}_${attrId}`;
+        if (!edgeIdSet.has(edgeId)) {
+          edgeIdSet.add(edgeId);
+          edges.push({
+            id: edgeId,
+            source: n.id,
+            target: attrId,
+            relationType: 'has_attribute',
+            idealLength: 80,
+          });
         }
       });
     }
-
-    // Group nodes by layer
-    const layerGroups = new Map<number, GraphNode[]>();
-    rawNodes.forEach(n => {
-      const layer = lMap.get(n.id) ?? 4;
-      if (!layerGroups.has(layer)) layerGroups.set(layer, []);
-      layerGroups.get(layer)!.push(n);
-    });
-
-    // Assign horizontal positions
-    const positioned: GraphNode[] = [];
-    layerGroups.forEach((groupNodes, layer) => {
-      const x = COLUMN_X[layer] ?? (COLUMN_X[4] + (layer - 4) * COLUMN_SPACING);
-      const count = groupNodes.length;
-      const totalH = count * NODE_H + (count - 1) * NODE_GAP;
-      const startY = 300 - totalH / 2;
-
-      groupNodes.forEach((n, i) => {
-        const y = startY + i * (NODE_H + NODE_GAP);
-        positioned.push({ ...n, x, y, width: NODE_W, height: NODE_H });
+    if (n.type === 'skill' && n.dataSources && n.dataSources.length > 0) {
+      n.dataSources.forEach((dsName, idx) => {
+        const dsId = `ds_${n.id}_${idx}`;
+        if (!nodeMap.has(dsId)) {
+          const cfg = NODE_TYPE_CONFIG.data_source;
+          nodeMap.set(dsId, {
+            id: dsId,
+            x: 0, y: 0, vx: 0, vy: 0,
+            mass: cfg.mass,
+            pinned: false,
+            opacity: 0,
+            label: dsName,
+            type: 'data_source',
+            width: cfg.width,
+            height: cfg.height,
+          });
+        }
+        const edgeId = `ec_${n.id}_${dsId}`;
+        if (!edgeIdSet.has(edgeId)) {
+          edgeIdSet.add(edgeId);
+          edges.push({
+            id: edgeId,
+            source: dsId,
+            target: n.id,
+            relationType: 'consumes',
+            idealLength: 100,
+          });
+        }
       });
+    }
+  });
+
+  return { nodes: Array.from(nodeMap.values()), edges };
+}
+
+function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
+  const svgRef = React.useRef<SVGSVGElement>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const animFrameRef = React.useRef<number>(0);
+  const simFrameRef = React.useRef<number>(0);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1.0);
+  const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(true);
+  const [nodes, setNodes] = useState<ForceNode[]>([]);
+  const [edges, setEdges] = useState<ForceEdge[]>([]);
+  const [enteredNodes, setEnteredNodes] = useState<Set<string>>(new Set());
+  const [enteredEdges, setEnteredEdges] = useState<Set<string>>(new Set());
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const [canvasSize, setCanvasSize] = React.useState({ w: 900, h: 600 });
+
+  // Build graph data
+  React.useEffect(() => {
+    const { nodes: fNodes, edges: fEdges } = buildForceGraph(activeAgentId);
+    const w = canvasSize.w;
+    const h = canvasSize.h;
+
+    // Initialize positions in a circle around center
+    const count = fNodes.length;
+    fNodes.forEach((n, i) => {
+      const angle = (i / count) * Math.PI * 2;
+      const radius = Math.min(w, h) * 0.25;
+      n.x = w / 2 + Math.cos(angle) * radius;
+      n.y = h / 2 + Math.sin(angle) * radius;
+      n.vx = 0;
+      n.vy = 0;
+      n.pinned = false;
+      n.opacity = 0;
     });
 
-    // Topological order for auto-play
-    const visited = new Set<string>();
-    const order: string[] = [];
-    function visit(nid: string) {
-      if (visited.has(nid)) return;
-      visited.add(nid);
-      edges.filter(e => e.source === nid).forEach(e => visit(e.target));
-      order.push(nid);
-    }
-    positioned.forEach(n => { if (!edges.some(e => e.target === n.id)) visit(n.id); });
-
-    return { nodes: positioned, topoOrder: order, layerMap: lMap };
-  }, [rawNodes, edges]);
-
-  // Entrance animation: nodes appear in topological order with stagger
-  React.useEffect(() => {
+    setNodes(fNodes);
+    setEdges(fEdges);
     setEnteredNodes(new Set());
     setEnteredEdges(new Set());
-    const timers: NodeJS.Timeout[] = [];
+    setIsSimulating(true);
+    simFrameRef.current = 0;
 
-    topoOrder.forEach((nodeId, i) => {
+    // Entrance animation: nodes fade in sequentially
+    const timers: NodeJS.Timeout[] = [];
+    fNodes.forEach((n, i) => {
       const t = setTimeout(() => {
-        setEnteredNodes(prev => new Set([...prev, nodeId]));
-        // Edges appear after both source and target are entered
-        edges.forEach(edge => {
-          if (edge.target === nodeId) {
-            setEnteredEdges(prev => new Set([...prev, edge.id]));
-          }
-        });
-      }, i * 80);
+        setEnteredNodes(prev => new Set([...prev, n.id]));
+      }, i * 60 + 100);
+      timers.push(t);
+    });
+
+    // Edges appear after both endpoints are entered
+    fEdges.forEach((e, i) => {
+      const t = setTimeout(() => {
+        setEnteredEdges(prev => new Set([...prev, e.id]));
+      }, fNodes.length * 60 + i * 40 + 200);
       timers.push(t);
     });
 
     return () => timers.forEach(clearTimeout);
-  }, [topoOrder, edges, activeAgentId]);
+  }, [activeAgentId, canvasSize.w, canvasSize.h]);
 
-  // Auto-play: highlight nodes in sequence
+  // Measure container size
   React.useEffect(() => {
-    if (!autoPlay) return;
-    let idx = 0;
-    setActiveNodeId(topoOrder[0] || null);
-    const timer = setInterval(() => {
-      idx = (idx + 1) % topoOrder.length;
-      setActiveNodeId(topoOrder[idx]);
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [topoOrder, autoPlay, activeAgentId]);
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const cr = entry.contentRect;
+        setCanvasSize({ w: cr.width, h: cr.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const svgWidth = 1000;
-  const svgHeight = 640;
+  // Force-directed layout engine
+  React.useEffect(() => {
+    if (nodes.length === 0 || edges.length === 0) return;
 
-  // Bezier curve edge path (horizontal flow)
-  const buildEdgePath = (src: GraphNode, tgt: GraphNode) => {
-    const sx = src.x + src.width;
-    const sy = src.y + src.height / 2;
-    const tx = tgt.x;
-    const ty = tgt.y + tgt.height / 2;
-    const c1x = sx + (tx - sx) * 0.5;
-    const c1y = sy;
-    const c2x = tx - (tx - sx) * 0.5;
-    const c2y = ty;
-    return `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
-  };
+    const K_REPULSE = 150;
+    const K_SPRING = 0.05;
+    const K_CENTER = 0.01;
+    const DAMPING = 0.9;
+    const MAX_FRAME = 300;
+    const ENERGY_THRESHOLD = 0.01;
+    const w = canvasSize.w;
+    const h = canvasSize.h;
 
-  // Check if edge is active (on auto-play path)
-  const isEdgeActive = (edge: GraphEdge) => {
-    if (!activeNodeId) return false;
-    const activeIdx = topoOrder.indexOf(activeNodeId);
-    const srcIdx = topoOrder.indexOf(edge.source);
-    const tgtIdx = topoOrder.indexOf(edge.target);
-    return srcIdx >= 0 && tgtIdx >= 0 && activeIdx >= tgtIdx && activeIdx >= srcIdx;
-  };
+    const nodeMap = new Map<string, ForceNode>();
+    nodes.forEach(n => nodeMap.set(n.id, n));
 
-  const activeNode = nodes.find(n => n.id === activeNodeId);
+    let running = true;
 
-  // Drag handlers
+    const step = () => {
+      if (!running) return;
+      simFrameRef.current++;
+      const frame = simFrameRef.current;
+
+      if (frame > MAX_FRAME) {
+        setIsSimulating(false);
+        return;
+      }
+
+      let totalEnergy = 0;
+      const temperature = Math.max(0.1, 1 - frame / MAX_FRAME);
+
+      // Repulsion between all node pairs
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const distSq = dx * dx + dy * dy;
+          const dist = Math.sqrt(distSq) || 1;
+          const minDist = (a.width + b.height) / 2 + 20;
+          const effectiveDist = Math.max(dist, minDist);
+          const force = (K_REPULSE * a.mass * b.mass) / (effectiveDist * effectiveDist) * temperature;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+
+          if (!a.pinned) { a.vx -= fx / a.mass; a.vy -= fy / a.mass; }
+          if (!b.pinned) { b.vx += fx / b.mass; b.vy += fy / b.mass; }
+        }
+      }
+
+      // Spring force along edges
+      edges.forEach(edge => {
+        const src = nodeMap.get(edge.source);
+        const tgt = nodeMap.get(edge.target);
+        if (!src || !tgt) return;
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = K_SPRING * (dist - edge.idealLength) * temperature;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+
+        if (!src.pinned) { src.vx += fx / src.mass; src.vy += fy / src.mass; }
+        if (!tgt.pinned) { tgt.vx -= fx / tgt.mass; tgt.vy -= fy / tgt.mass; }
+      });
+
+      // Center gravity
+      nodes.forEach(n => {
+        if (n.pinned) return;
+        const dx = w / 2 - n.x;
+        const dy = h / 2 - n.y;
+        n.vx += dx * K_CENTER * temperature;
+        n.vy += dy * K_CENTER * temperature;
+      });
+
+      // Apply velocity with damping and boundary constraints
+      nodes.forEach(n => {
+        if (n.pinned) return;
+        n.vx *= DAMPING;
+        n.vy *= DAMPING;
+        n.x += n.vx;
+        n.y += n.vy;
+
+        // Keep within bounds with padding
+        const padX = n.width / 2 + 20;
+        const padY = n.height / 2 + 20;
+        n.x = Math.max(padX, Math.min(w - padX, n.x));
+        n.y = Math.max(padY, Math.min(h - padY, n.y));
+
+        totalEnergy += n.vx * n.vx + n.vy * n.vy;
+      });
+
+      // Trigger re-render
+      setNodes(prev => prev.map((n, i) => ({ ...n, ...nodes[i] })));
+
+      if (totalEnergy < ENERGY_THRESHOLD && frame > 50) {
+        setIsSimulating(false);
+        return;
+      }
+
+      animFrameRef.current = requestAnimationFrame(step);
+    };
+
+    if (isSimulating) {
+      animFrameRef.current = requestAnimationFrame(step);
+    }
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [nodes.length, edges.length, isSimulating, canvasSize.w, canvasSize.h]);
+
+  // Canvas drag handlers
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
-    setIsDragging(true);
-    dragStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
+    const target = e.target as Element;
+    if (target.closest('[data-node]')) return; // Don't drag canvas when clicking a node
+    setIsDraggingCanvas(true);
+    dragStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!isDragging) return;
+    if (!isDraggingCanvas) return;
     const dx = e.clientX - dragStartRef.current.x;
     const dy = e.clientY - dragStartRef.current.y;
-    setPanX(dragStartRef.current.panX + dx);
-    setPanY(dragStartRef.current.panY + dy);
+    setPan({ x: dragStartRef.current.panX + dx, y: dragStartRef.current.panY + dy });
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseUp = () => setIsDraggingCanvas(false);
 
   const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    setZoom(prev => Math.max(0.3, Math.min(3.0, prev + delta)));
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(0.3, Math.min(3.0, zoom + delta));
+    const zoomRatio = newZoom / zoom;
+    setPan({
+      x: mouseX - (mouseX - pan.x) * zoomRatio,
+      y: mouseY - (mouseY - pan.y) * zoomRatio,
+    });
+    setZoom(newZoom);
   };
 
-  // Edge gradient ID
-  const getEdgeGradientId = (edgeId: string) => `edge-grad-${edgeId}`;
+  const handleDoubleClick = () => {
+    setPan({ x: 0, y: 0 });
+    setZoom(1.0);
+  };
+
+  const handleNodeClick = (nodeId: string) => {
+    setNodes(prev => prev.map(n =>
+      n.id === nodeId ? { ...n, pinned: !n.pinned } : n
+    ));
+  };
+
+  // Build edge path
+  const buildEdgePath = (src: ForceNode, tgt: ForceNode) => {
+    const sx = src.x;
+    const sy = src.y;
+    const tx = tgt.x;
+    const ty = tgt.y;
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    // Shorten line to not overlap node bounds
+    const srcR = Math.max(src.width, src.height) / 2 + 4;
+    const tgtR = Math.max(tgt.width, tgt.height) / 2 + 4;
+    const startX = sx + (dx / dist) * srcR;
+    const startY = sy + (dy / dist) * srcR;
+    const endX = tx - (dx / dist) * tgtR;
+    const endY = ty - (dy / dist) * tgtR;
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
+  };
+
+  // Compute hover highlights
+  const highlightedNodes = React.useMemo(() => {
+    if (!hoveredNode) return new Set<string>();
+    const set = new Set<string>([hoveredNode]);
+    edges.forEach(e => {
+      if (e.source === hoveredNode) set.add(e.target);
+      if (e.target === hoveredNode) set.add(e.source);
+    });
+    return set;
+  }, [hoveredNode, edges]);
+
+  const highlightedEdges = React.useMemo(() => {
+    if (!hoveredNode) return new Set<string>();
+    const set = new Set<string>();
+    edges.forEach(e => {
+      if (e.source === hoveredNode || e.target === hoveredNode) set.add(e.id);
+    });
+    return set;
+  }, [hoveredNode, edges]);
+
+  const hoveredNodeData = nodes.find(n => n.id === hoveredNode);
+
+  // Arrow marker for edges
+  const getArrowId = (relType: string) => `arrow-${relType}`;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <GitBranch size={16} className="text-indigo-600" />
-          <span className="text-sm font-bold text-gray-900">Agent 推演知识图谱</span>
+          <Network size={16} className="text-indigo-600" />
+          <span className="text-sm font-bold text-gray-900">Agent 知识关系网络</span>
+          {isSimulating && (
+            <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full animate-pulse">
+              布局收敛中...
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAutoPlay(!autoPlay)}
-            className={cn(
-              "text-[10px] px-2 py-1 rounded-full font-medium transition-colors",
-              autoPlay ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"
-            )}
-          >
-            {autoPlay ? '自动演示中' : '已暂停'}
-          </button>
+        <div className="flex items-center gap-1 text-[10px] text-gray-500">
+          <span>拖拽画布移动</span>
+          <span className="mx-1">·</span>
+          <span>滚轮缩放</span>
+          <span className="mx-1">·</span>
+          <span>点击节点固定</span>
         </div>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-2">
         {([
-          { type: 'intent', label: '意图' },
           { type: 'ontology', label: '本体' },
-          { type: 'data', label: '数据' },
+          { type: 'attribute', label: '属性' },
+          { type: 'data_source', label: '数据源' },
           { type: 'skill', label: '技能' },
           { type: 'constraint', label: '约束' },
-          { type: 'simulation', label: '推演' },
           { type: 'result', label: '结果' },
-        ] as { type: NodeType; label: string }[]).map(item => (
-          <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-gray-200">
-            <div className="w-1 h-3 rounded-full" style={{ background: TYPE_BAR_COLOR[item.type] }} />
-            <span className="text-[10px] font-medium text-gray-600">{item.label}</span>
-          </div>
-        ))}
+        ] as { type: string; label: string }[]).map(item => {
+          const cfg = NODE_TYPE_CONFIG[item.type];
+          return (
+            <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-gray-200">
+              <div className="w-1 h-3 rounded-full" style={{ background: cfg?.barColor || '#94A3B8' }} />
+              <span className="text-[10px] font-medium text-gray-600">{item.label}</span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* SVG Flow Graph */}
+      {/* SVG Force-Directed Graph */}
       <div
-        className="rounded-lg overflow-hidden"
+        ref={containerRef}
+        className="rounded-lg overflow-hidden relative"
         style={{
           background: '#F8FAFC',
           backgroundImage: 'radial-gradient(circle, #E2E8F0 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
+          backgroundSize: '20px 20px',
+          height: 520,
         }}
       >
         <svg
           ref={svgRef}
           width="100%"
-          height={svgHeight}
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          height="100%"
+          style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
+          onDoubleClick={handleDoubleClick}
         >
           <defs>
-            {/* Edge gradients: source bright -> target dim */}
-            {edges.map(edge => {
-              const src = nodes.find(n => n.id === edge.source);
-              const tgt = nodes.find(n => n.id === edge.target);
-              if (!src || !tgt) return null;
-              const srcColor = TYPE_BAR_COLOR[src.type];
-              const tgtColor = TYPE_BAR_COLOR[tgt.type];
-              return (
-                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor={srcColor} stopOpacity={0.9} />
-                  <stop offset="100%" stopColor={tgtColor} stopOpacity={0.3} />
-                </linearGradient>
-              );
-            })}
+            {/* Arrow markers for each edge type */}
+            {Object.entries(EDGE_TYPE_CONFIG).map(([type, cfg]) => (
+              cfg.hasArrow && (
+                <marker
+                  key={type}
+                  id={getArrowId(type)}
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill={cfg.color} opacity={cfg.opacity} />
+                </marker>
+              )
+            ))}
 
-            {/* Drop shadow for cards */}
+            {/* Drop shadow filters */}
             <filter id="card-shadow" x="-10%" y="-20%" width="130%" height="160%">
               <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.08" />
             </filter>
             <filter id="card-shadow-hover" x="-10%" y="-20%" width="130%" height="160%">
-              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000" floodOpacity="0.12" />
+              <feDropShadow dx="0" dy="4" stdDeviation="8" floodColor="#000" floodOpacity="0.15" />
+            </filter>
+            <filter id="glow-filter" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
             <filter id="tooltip-shadow" x="-5%" y="-5%" width="115%" height="120%">
               <feDropShadow dx="0" dy="3" stdDeviation="5" floodColor="#000" floodOpacity="0.15" />
             </filter>
-
-            {/* CSS animations */}
-            <style>{`
-              @keyframes flowDash {
-                to { stroke-dashoffset: -20; }
-              }
-              .edge-flowing {
-                animation: flowDash 0.8s linear infinite;
-              }
-              @keyframes pulseGlow {
-                0%, 100% { opacity: 0.5; }
-                50% { opacity: 1; }
-              }
-              .pulse-glow {
-                animation: pulseGlow 1.5s ease-in-out infinite;
-              }
-              .node-card {
-                transition: transform 0.25s ease, filter 0.25s ease, opacity 0.3s ease-out;
-                transform-origin: center center;
-              }
-              .node-card:hover {
-                transform: translateY(-3px);
-              }
-              .node-enter {
-                opacity: 0;
-                transform: translateY(12px);
-              }
-              .node-enter-active {
-                opacity: 1;
-                transform: translateY(0);
-              }
-            `}</style>
           </defs>
 
           {/* Main transform group for pan and zoom */}
-          <g transform={`translate(${panX},${panY}) scale(${zoom})`} style={{ transformOrigin: 'center center' }}>
-            {/* Edges - Bezier curves */}
+          <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`} style={{ transformOrigin: '0 0' }}>
+            {/* Edges */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.source);
               const tgt = nodes.find(n => n.id === edge.target);
               if (!src || !tgt) return null;
-              const active = isEdgeActive(edge);
+              const cfg = EDGE_TYPE_CONFIG[edge.relationType] || EDGE_TYPE_CONFIG.default;
               const entered = enteredEdges.has(edge.id);
+              const isHighlighted = highlightedEdges.has(edge.id);
+              const isDimmed = hoveredNode && !isHighlighted;
               const pathD = buildEdgePath(src, tgt);
-              const gradId = getEdgeGradientId(edge.id);
-              const srcColor = TYPE_BAR_COLOR[src.type];
 
               return (
-                <g key={edge.id} opacity={entered ? 1 : 0} style={{ transition: 'opacity 0.4s ease' }}>
-                  {/* Base line */}
+                <g
+                  key={edge.id}
+                  opacity={entered ? (isDimmed ? 0.15 : (isHighlighted ? 1 : cfg.opacity)) : 0}
+                  style={{ transition: 'opacity 0.3s ease' }}
+                >
                   <path
                     d={pathD}
                     fill="none"
-                    stroke={active ? srcColor : srcColor}
-                    strokeWidth={active ? 2.5 : 1.5}
-                    strokeOpacity={active ? 0.9 : 0.4}
-                    style={{ transition: 'all 0.4s ease' }}
+                    stroke={cfg.color}
+                    strokeWidth={isHighlighted ? cfg.width + 1 : cfg.width}
+                    strokeDasharray={cfg.dashed ? '4 4' : 'none'}
+                    markerEnd={cfg.hasArrow ? `url(#${getArrowId(edge.relationType)})` : undefined}
+                    style={{ transition: 'all 0.3s ease' }}
                   />
-                  {/* Flowing dash on active edges */}
-                  {active && (
-                    <path
-                      d={pathD}
-                      fill="none"
-                      stroke={`url(#${gradId})`}
-                      strokeWidth={2.5}
-                      strokeDasharray="5 5"
-                      className="edge-flowing"
-                      strokeOpacity={0.9}
-                    />
+                  {/* Animated flow dot for flows_to */}
+                  {cfg.animated && entered && (
+                    <circle r="3" fill={cfg.color} opacity={0.8}>
+                      <animateMotion dur="2s" repeatCount="indefinite" path={pathD} />
+                    </circle>
                   )}
-                  {/* Flowing dot */}
-                  <circle r="3" fill={srcColor} opacity={active ? 0.8 : 0} style={{ transition: 'opacity 0.4s ease' }}>
-                    <animateMotion dur="2s" repeatCount="indefinite" path={pathD} />
-                  </circle>
+                  {/* Edge label */}
+                  {edge.label && (
+                    <text
+                      x={(src.x + tgt.x) / 2}
+                      y={(src.y + tgt.y) / 2 - 4}
+                      textAnchor="middle"
+                      fill={cfg.color}
+                      fontSize="9"
+                      fontWeight="500"
+                      opacity={0.7}
+                    >
+                      {edge.label}
+                    </text>
+                  )}
                 </g>
               );
             })}
 
-            {/* Nodes - card rectangles */}
+            {/* Nodes */}
             {nodes.map(node => {
-              const isActive = activeNodeId === node.id;
-              const isHovered = hoveredNode === node.id;
-              const Icon = TYPE_ICON[node.type];
-              const barColor = TYPE_BAR_COLOR[node.type];
+              const cfg = NODE_TYPE_CONFIG[node.type] || NODE_TYPE_CONFIG.ontology;
+              const Icon = cfg.icon;
               const entered = enteredNodes.has(node.id);
-              const cx = node.x + node.width / 2;
-              const cy = node.y + node.height / 2;
+              const isHovered = hoveredNode === node.id;
+              const isHighlighted = highlightedNodes.has(node.id);
+              const isDimmed = hoveredNode && !isHighlighted;
+              const opacity = entered ? (isDimmed ? 0.2 : (isHovered ? 1 : 0.9)) : 0;
 
               return (
                 <g
                   key={node.id}
-                  className="node-card"
+                  data-node={node.id}
                   style={{
-                    opacity: entered ? 1 : 0,
-                    transform: entered ? (isHovered ? 'translateY(-3px)' : 'translateY(0)') : 'translateY(12px)',
-                    transition: 'opacity 0.3s ease-out, transform 0.25s ease',
+                    opacity,
+                    transition: 'opacity 0.4s ease, transform 0.3s ease',
+                    transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                    transformOrigin: `${node.x}px ${node.y}px`,
+                    cursor: 'pointer',
                   }}
                   onMouseEnter={() => setHoveredNode(node.id)}
                   onMouseLeave={() => setHoveredNode(null)}
+                  onClick={(e) => { e.stopPropagation(); handleNodeClick(node.id); }}
                 >
-                  {/* Bottom shadow layer (3D depth) */}
-                  <rect
-                    x={node.x}
-                    y={node.y + 2}
-                    width={node.width}
-                    height={node.height}
-                    rx={8}
-                    fill="rgba(0,0,0,0.06)"
-                  />
-
-                  {/* Active glow */}
-                  {isActive && (
+                  {/* Glow effect on hover */}
+                  {isHovered && (
                     <rect
-                      x={node.x - 3}
-                      y={node.y - 3}
-                      width={node.width + 6}
-                      height={node.height + 6}
-                      rx={10}
+                      x={node.x - node.width / 2 - 6}
+                      y={node.y - node.height / 2 - 6}
+                      width={node.width + 12}
+                      height={node.height + 12}
+                      rx={node.type === 'attribute' ? 14 : 10}
                       fill="none"
-                      stroke={barColor}
+                      stroke={cfg.barColor}
                       strokeWidth={2}
-                      className="pulse-glow"
-                      opacity={0.6}
+                      opacity={0.4}
+                      filter="url(#glow-filter)"
                     />
                   )}
 
-                  {/* Main card body */}
-                  <rect
-                    x={node.x}
-                    y={node.y}
-                    width={node.width}
-                    height={node.height}
-                    rx={8}
-                    fill="#FFFFFF"
-                    filter={isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)'}
-                    style={{
-                      transform: isActive ? 'scale(1.03)' : 'scale(1)',
-                      transformOrigin: `${cx}px ${cy}px`,
-                      transition: 'transform 0.25s ease',
-                    }}
-                  />
+                  {/* Pinned indicator */}
+                  {node.pinned && (
+                    <circle
+                      cx={node.x + node.width / 2 - 4}
+                      cy={node.y - node.height / 2 + 4}
+                      r={4}
+                      fill="#F59E0B"
+                      stroke="#FFF"
+                      strokeWidth={1}
+                    />
+                  )}
 
-                  {/* Left color bar */}
-                  <rect
-                    x={node.x}
-                    y={node.y}
-                    width={4}
-                    height={node.height}
-                    rx={8}
-                    fill={barColor}
-                    clipPath={`inset(0 ${node.width - 4}px 0 0 round 8px)`}
-                  />
+                  {/* Node body */}
+                  {node.type === 'attribute' ? (
+                    // Ellipse for attribute nodes
+                    <ellipse
+                      cx={node.x}
+                      cy={node.y}
+                      rx={node.width / 2}
+                      ry={node.height / 2}
+                      fill={cfg.bg}
+                      stroke={cfg.color}
+                      strokeWidth={1}
+                      filter={isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)'}
+                    />
+                  ) : (
+                    // Rounded rect for other nodes
+                    <rect
+                      x={node.x - node.width / 2}
+                      y={node.y - node.height / 2}
+                      width={node.width}
+                      height={node.height}
+                      rx={8}
+                      fill={cfg.bg}
+                      filter={isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)'}
+                    />
+                  )}
+
+                  {/* Left color bar (for non-ellipse nodes) */}
+                  {node.type !== 'attribute' && (
+                    <rect
+                      x={node.x - node.width / 2}
+                      y={node.y - node.height / 2}
+                      width={4}
+                      height={node.height}
+                      rx={8}
+                      fill={cfg.barColor}
+                      clipPath={`inset(0 ${node.width - 4}px 0 0 round 8px)`}
+                    />
+                  )}
 
                   {/* Icon */}
                   <foreignObject
-                    x={node.x + 10}
-                    y={node.y + (node.height - 18) / 2}
+                    x={node.x - node.width / 2 + 8}
+                    y={node.y - 9}
                     width={18}
                     height={18}
                   >
                     <div className="flex items-center justify-center w-full h-full">
-                      <Icon size={14} color={barColor} />
+                      <Icon size={14} color={cfg.color} />
                     </div>
                   </foreignObject>
 
                   {/* Label */}
                   <text
-                    x={node.x + 32}
-                    y={node.y + 22}
+                    x={node.x - node.width / 2 + 30}
+                    y={node.y + 1}
                     fill="#1F2937"
-                    fontSize="14"
+                    fontSize="12"
                     fontWeight="500"
+                    dominantBaseline="middle"
                   >
                     {node.label}
                   </text>
 
                   {/* Sublabel */}
-                  {node.sublabel && (
+                  {node.sublabel && node.height > 36 && (
                     <text
-                      x={node.x + 32}
-                      y={node.y + 38}
+                      x={node.x - node.width / 2 + 30}
+                      y={node.y + 14}
                       fill="#6B7280"
-                      fontSize="10"
+                      fontSize="9"
                     >
                       {node.sublabel}
                     </text>
                   )}
-
-                  {/* Hover tooltip */}
-                  {isHovered && (
-                    <g>
-                      <rect
-                        x={Math.min(node.x + node.width + 12, svgWidth - 240)}
-                        y={Math.max(node.y - 10, 8)}
-                        width={220}
-                        height={node.output ? 120 : 88}
-                        rx={8}
-                        fill="#FFFFFF"
-                        stroke="#E2E8F0"
-                        strokeWidth={1}
-                        filter="url(#tooltip-shadow)"
-                      />
-                      {/* Color bar on tooltip */}
-                      <rect
-                        x={Math.min(node.x + node.width + 12, svgWidth - 240)}
-                        y={Math.max(node.y - 10, 8)}
-                        width={3}
-                        height={node.output ? 120 : 88}
-                        rx={8}
-                        fill={barColor}
-                        clipPath={`inset(0 217px 0 0 round 8px)`}
-                      />
-                      <text
-                        x={Math.min(node.x + node.width + 24, svgWidth - 228)}
-                        y={Math.max(node.y + 10, 28)}
-                        fill={barColor}
-                        fontSize="12"
-                        fontWeight="bold"
-                      >
-                        {node.label}
-                      </text>
-                      <text
-                        x={Math.min(node.x + node.width + 24, svgWidth - 228)}
-                        y={Math.max(node.y + 28, 46)}
-                        fill="#6B7280"
-                        fontSize="10"
-                      >
-                        {node.description && node.description.length > 36
-                          ? node.description.slice(0, 36) + '...'
-                          : node.description}
-                      </text>
-                      {node.skills && node.skills.length > 0 && (
-                        <text
-                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
-                          y={Math.max(node.y + 44, 62)}
-                          fill="#1677FF"
-                          fontSize="9"
-                          fontWeight="500"
-                        >
-                          Skills: {node.skills.slice(0, 2).join(', ')}
-                        </text>
-                      )}
-                      {node.dataSources && node.dataSources.length > 0 && (
-                        <text
-                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
-                          y={Math.max(node.y + 58, 76)}
-                          fill="#13C2C2"
-                          fontSize="9"
-                          fontWeight="500"
-                        >
-                          Data: {node.dataSources.slice(0, 2).join(', ')}
-                        </text>
-                      )}
-                      {node.output && (
-                        <text
-                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
-                          y={Math.max(node.y + 72, 90)}
-                          fill="#52C41A"
-                          fontSize="9"
-                          fontWeight="500"
-                        >
-                          {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
-                        </text>
-                      )}
-                    </g>
-                  )}
                 </g>
               );
             })}
-
-            {/* Active node output banner at bottom */}
-            {activeNode?.output && (
-              <g opacity={enteredNodes.has(activeNode.id) ? 1 : 0} style={{ transition: 'opacity 0.4s ease' }}>
-                <rect
-                  x={svgWidth / 2 - 220}
-                  y={svgHeight - 52}
-                  width={440}
-                  height={36}
-                  rx={8}
-                  fill="rgba(82,196,26,0.08)"
-                  stroke="rgba(82,196,26,0.3)"
-                  strokeWidth={1}
-                />
-                <text
-                  x={svgWidth / 2}
-                  y={svgHeight - 30}
-                  textAnchor="middle"
-                  fill="#52C41A"
-                  fontSize="12"
-                  fontWeight="500"
-                >
-                  {activeNode.output}
-                </text>
-              </g>
-            )}
           </g>
         </svg>
+
+        {/* Floating tooltip card */}
+        {hoveredNodeData && (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{
+              left: '50%',
+              top: 16,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <div className="bg-white rounded-lg border border-gray-200 shadow-lg px-4 py-3 min-w-[280px] max-w-[360px]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1 h-4 rounded-full" style={{ background: NODE_TYPE_CONFIG[hoveredNodeData.type]?.barColor || '#94A3B8' }} />
+                <span className="text-sm font-bold text-gray-900">{hoveredNodeData.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{hoveredNodeData.type}</span>
+              </div>
+              {hoveredNodeData.description && (
+                <p className="text-xs text-gray-600 mb-2 leading-relaxed">{hoveredNodeData.description}</p>
+              )}
+              {hoveredNodeData.skills && hoveredNodeData.skills.length > 0 && (
+                <div className="flex items-start gap-1 mb-1">
+                  <span className="text-[10px] text-gray-400 shrink-0 mt-0.5">Skills:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {hoveredNodeData.skills.map(s => (
+                      <span key={s} className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hoveredNodeData.dataSources && hoveredNodeData.dataSources.length > 0 && (
+                <div className="flex items-start gap-1 mb-1">
+                  <span className="text-[10px] text-gray-400 shrink-0 mt-0.5">Data:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {hoveredNodeData.dataSources.map(d => (
+                      <span key={d} className="text-[10px] px-1.5 py-0.5 bg-cyan-50 text-cyan-600 rounded">{d}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hoveredNodeData.output && (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <span className="text-[10px] text-emerald-600 font-medium">{hoveredNodeData.output}</span>
+                </div>
+              )}
+              {hoveredNodeData.pinned && (
+                <div className="mt-1 text-[10px] text-amber-600">已固定位置</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {[
-          { label: '调用技能', value: `${rawNodes.reduce((s, n) => s + (n.skills?.length || 0), 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
-          { label: '数据源', value: `${[...new Set(rawNodes.flatMap(n => n.dataSources || []))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
-          { label: '本体实体', value: `${[...new Set(rawNodes.flatMap(n => n.ontologies || []).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
-          { label: '推演节点', value: `${rawNodes.length}个`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+          { label: '本体实体', value: `${nodes.filter(n => n.type === 'ontology').length}个`, icon: Database, color: 'text-blue-600 bg-blue-50' },
+          { label: '数据源', value: `${nodes.filter(n => n.type === 'data_source' || n.type === 'data').length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '技能工具', value: `${nodes.filter(n => n.type === 'skill').length}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '约束规则', value: `${nodes.filter(n => n.type === 'constraint').length}个`, icon: ShieldCheck, color: 'text-red-600 bg-red-50' },
+          { label: '关系边', value: `${edges.length}条`, icon: Network, color: 'text-indigo-600 bg-indigo-50' },
         ].map(stat => (
           <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
             <div className={`p-1.5 rounded-md ${stat.color}`}>
