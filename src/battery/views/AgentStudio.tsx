@@ -188,8 +188,6 @@ export default function AgentStudio() {
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<string[]>(['执行层']);
   const [resultTab, setResultTab] = useState<'json' | 'graph'>('json');
-  const [showGraphModal, setShowGraphModal] = useState(false);
-  const [graphZoom, setGraphZoom] = useState(1);
 
   const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
   const activeRole = ROLE_TEMPLATES.find(r => r.id === activeAgent.roleId);
@@ -869,15 +867,6 @@ export default function AgentStudio() {
 
                 {activeStep === 'result' && (
                   <div className="space-y-4">
-                    {/* 预览推演过程按钮 */}
-                    <button
-                      onClick={() => setShowGraphModal(true)}
-                      className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md"
-                    >
-                      <Maximize2 size={16} />
-                      <span className="text-sm font-semibold">预览推演过程</span>
-                    </button>
-
                     <div className="space-y-4">
                       <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
                         <textarea
@@ -901,91 +890,6 @@ export default function AgentStudio() {
         </div>
       </div>
 
-      {/* 推演过程预览模态框 */}
-      {showGraphModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowGraphModal(false)}
-          />
-          <div className="relative z-10 w-[95vw] h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            {/* 头部 */}
-            <div className="h-14 flex items-center justify-between px-5 border-b border-slate-700 bg-slate-900 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                  <Network size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-100">推演过程预览</h3>
-                  <p className="text-[10px] text-slate-400">{activeAgent.name} · 知识图谱推演流程</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* 缩放控制 */}
-                <div className="flex items-center gap-1 bg-slate-800 border border-slate-600 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setGraphZoom(z => Math.max(0.5, z - 0.15))}
-                    className="p-1.5 hover:bg-slate-700 rounded text-slate-300"
-                    title="缩小"
-                  >
-                    <ZoomOut size={14} />
-                  </button>
-                  <span className="text-[10px] font-mono text-slate-300 w-10 text-center">{Math.round(graphZoom * 100)}%</span>
-                  <button
-                    onClick={() => setGraphZoom(z => Math.min(2, z + 0.15))}
-                    className="p-1.5 hover:bg-slate-700 rounded text-slate-300"
-                    title="放大"
-                  >
-                    <ZoomIn size={14} />
-                  </button>
-                </div>
-                <button
-                  onClick={() => setShowGraphModal(false)}
-                  className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* 图谱区域 - 3D效果 */}
-            <div
-              className="flex-1 overflow-hidden p-4 flex items-center justify-center relative"
-              style={{
-                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
-                perspective: '1200px',
-              }}
-            >
-              {/* 背景网格 */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: 'linear-gradient(rgba(99,102,241,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.15) 1px, transparent 1px)',
-                  backgroundSize: '40px 40px',
-                }}
-              />
-              {/* 径向光晕 */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background: 'radial-gradient(ellipse at 50% 50%, rgba(79,70,229,0.08) 0%, transparent 70%)',
-                }}
-              />
-              <div
-                style={{
-                  transform: `scale(${graphZoom}) rotateX(8deg) rotateY(-2deg)`,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                  transformStyle: 'preserve-3d',
-                }}
-                className="w-full h-full flex items-center justify-center relative z-10"
-              >
-                <BatteryReasoningGraph activeAgentId={activeAgentId} />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
