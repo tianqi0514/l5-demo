@@ -1332,6 +1332,119 @@ function drawNodeShapePath(
   }
 }
 
+// ============================================================
+// 中心辐射式知识图谱布局 —— 节点配置
+// ============================================================
+
+const NODE_RADIAL_CONFIG: Record<GraphNodeType, { color: string; radius: number; label: string; depthOpacity: number }> = {
+  intent:     { color: '#8B5CF6', radius: 40, label: '意图', depthOpacity: 1.0 },
+  ontology:   { color: '#3B82F6', radius: 28, label: '本体', depthOpacity: 1.0 },
+  data:       { color: '#06B6D4', radius: 28, label: '数据', depthOpacity: 1.0 },
+  skill:      { color: '#F59E0B', radius: 24, label: '技能', depthOpacity: 0.95 },
+  constraint: { color: '#EF4444', radius: 20, label: '约束', depthOpacity: 0.9 },
+  simulation: { color: '#6366F1', radius: 20, label: '推演', depthOpacity: 0.9 },
+  result:     { color: '#10B981', radius: 18, label: '结果', depthOpacity: 0.85 },
+};
+
+/** BFS 计算每个节点的拓扑层级（从意图节点出发） */
+function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, number> {
+  const levels = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+
+  for (const n of nodes) {
+    adj.set(n.id, []);
+    inDegree.set(n.id, 0);
+  }
+  for (const e of edges) {
+    adj.get(e.source)?.push(e.target);
+    inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+  }
+
+  // 找到根节点（入度为0的intent节点）
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree.entries()) {
+    if (deg === 0) {
+      levels.set(id, 0);
+      queue.push(id);
+    }
+  }
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const curLevel = levels.get(cur) || 0;
+    for (const next of adj.get(cur) || []) {
+      const nextLevel = levels.get(next);
+      if (nextLevel === undefined || nextLevel < curLevel + 1) {
+        levels.set(next, curLevel + 1);
+        queue.push(next);
+      }
+    }
+  }
+
+  // 未访问到的节点默认放最后一层
+  let maxLevel = 0;
+  for (const l of levels.values()) maxLevel = Math.max(maxLevel, l);
+  for (const n of nodes) {
+    if (!levels.has(n.id)) {
+      levels.set(n.id, maxLevel + 1);
+    }
+  }
+
+  return levels;
+}
+
+/** 按拓扑层级重新计算节点位置（中心辐射式） */
+function layoutRadial(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+  const levels = computeNodeLevels(nodes, edges);
+  const cx = 420;
+  const cy = 320;
+
+  // 按层级分组
+  const levelGroups = new Map<number, GraphNode[]>();
+  for (const n of nodes) {
+    const lvl = levels.get(n.id) || 0;
+    if (!levelGroups.has(lvl)) levelGroups.set(lvl, []);
+    levelGroups.get(lvl)!.push(n);
+  }
+
+  // 层级半径配置
+  const levelRadius: Record<number, number> = {
+    0: 0,
+    1: 150,
+    2: 260,
+    3: 370,
+    4: 460,
+  };
+
+  const result: GraphNode[] = [];
+
+  for (const [lvl, group] of levelGroups.entries()) {
+    const radius = levelRadius[lvl] ?? 460;
+    const count = group.length;
+
+    if (lvl === 0) {
+      // 中心节点
+      for (const n of group) {
+        result.push({ ...n, x: cx, y: cy });
+      }
+    } else {
+      // 从 -90°（正上方）开始均匀分布
+      const angleStep = count > 1 ? (Math.PI * 2) / count : 0;
+      const startAngle = -Math.PI / 2;
+
+      group.forEach((n, idx) => {
+        const angle = startAngle + idx * angleStep;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+        result.push({ ...n, x, y });
+      });
+    }
+  }
+
+  return result;
+}
+
 function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -1339,6 +1452,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const animationRef = React.useRef<number>(0);
   const dashOffsetRef = React.useRef(0);
+  const flowParticlesRef = React.useRef<{ edgeId: string; t: number; speed: number }[]>([]);
 
   // Pan / Zoom refs (not state, to avoid re-renders during interaction)
   const panXRef = React.useRef(0);
@@ -1348,37 +1462,39 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const lastMouseRef = React.useRef<{ x: number; y: number } | null>(null);
   const [cursorStyle, setCursorStyle] = React.useState('grab');
 
-  const graph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
+  const rawGraph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
+  // 使用中心辐射式布局重新计算节点位置
+  const graph = React.useMemo(() => {
+    return {
+      nodes: layoutRadial(rawGraph.nodes, rawGraph.edges),
+      edges: rawGraph.edges,
+    };
+  }, [activeAgentId, rawGraph]);
   const { nodes, edges } = graph;
 
-  // Z-layer config based on node type
-  const getNodeDepthConfig = (type: GraphNodeType) => {
-    switch (type) {
-      case 'intent':
-      case 'data':
-        return { z: 2, scale: 1.15, brightness: 1, opacity: 1, glowIntensity: 1 };
-      case 'ontology':
-      case 'skill':
-        return { z: 1, scale: 1.0, brightness: 1, opacity: 1, glowIntensity: 0.6 };
-      case 'constraint':
-      case 'simulation':
-      case 'result':
-      default:
-        return { z: 0, scale: 0.9, brightness: 0.92, opacity: 0.85, glowIntensity: 0.3 };
+  // 初始化流动光点
+  React.useEffect(() => {
+    const particles: { edgeId: string; t: number; speed: number }[] = [];
+    for (const edge of edges) {
+      particles.push({ edgeId: edge.id, t: Math.random(), speed: 0.003 + Math.random() * 0.004 });
     }
-  };
+    flowParticlesRef.current = particles;
+  }, [edges]);
 
-  // Auto-play: nodes light up in sequence along the reasoning path
+  // Auto-play: nodes light up in sequence along BFS order
   useEffect(() => {
-    const sequence = nodes.map(n => n.id);
+    const levels = computeNodeLevels(nodes, edges);
+    const sequence = [...nodes]
+      .sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0))
+      .map(n => n.id);
     let idx = 0;
-    setActiveNodeId(sequence[0]);
+    setActiveNodeId(sequence[0] || null);
     const timer = setInterval(() => {
       idx = (idx + 1) % sequence.length;
       setActiveNodeId(sequence[idx]);
     }, 2000);
     return () => clearInterval(timer);
-  }, [activeAgentId, nodes]);
+  }, [activeAgentId, nodes, edges]);
 
   // Canvas rendering + interactions
   useEffect(() => {
@@ -1401,31 +1517,17 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
-      // Only start drag if not hovering a node
       let onNode = false;
       const z = zoomRef.current;
       const px = panXRef.current;
       const py = panYRef.current;
       for (const node of nodes) {
-        const depth = getNodeDepthConfig(node.type);
-        const ns = node;
-        const nx = (ns.x - cssWidth / 2) * z + cssWidth / 2 + px;
-        const ny = (ns.y - cssHeight / 2) * z + cssHeight / 2 + py;
-        const nw = ns.width * depth.scale * z;
-        const nh = ns.height * depth.scale * z;
-        const halfW = nw / 2;
-        const halfH = nh / 2;
-        if (ns.type === 'ontology') {
-          const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
-          if (dist <= halfW) { onNode = true; break; }
-        } else if (ns.type === 'data') {
-          const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
-          if (dist <= Math.min(halfW, halfH)) { onNode = true; break; }
-        } else {
-          if (mx >= nx - halfW && mx <= nx + halfW && my >= ny - halfH && my <= ny + halfH) {
-            onNode = true; break;
-          }
-        }
+        const cfg = NODE_RADIAL_CONFIG[node.type];
+        const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
+        const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
+        const nr = cfg.radius * z;
+        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
+        if (dist <= nr) { onNode = true; break; }
       }
       if (!onNode) {
         isDraggingRef.current = true;
@@ -1458,8 +1560,6 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       let newZoom = oldZoom * zoomFactor;
       newZoom = Math.max(0.3, Math.min(3, newZoom));
-
-      // Zoom centered on mouse position
       const worldX = (mx - cssWidth / 2 - panXRef.current) / oldZoom + cssWidth / 2;
       const worldY = (my - cssHeight / 2 - panYRef.current) / oldZoom + cssHeight / 2;
       panXRef.current = mx - cssWidth / 2 - (worldX - cssWidth / 2) * newZoom;
@@ -1472,7 +1572,6 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     window.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Helper: transform world coordinates to screen
     const toScreen = (wx: number, wy: number) => {
       const z = zoomRef.current;
       const px = panXRef.current;
@@ -1489,16 +1588,16 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       const px = panXRef.current;
       const py = panYRef.current;
 
-      // Background concentric circles
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.08)';
+      // 背景：同心圆网格
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.06)';
       ctx.lineWidth = 1;
       [100, 200, 300].forEach(r => {
         ctx.beginPath();
-        ctx.arc(cssWidth / 2, cssHeight / 2, r * z, 0, Math.PI * 2);
+        ctx.arc(cssWidth / 2 + px, cssHeight / 2 + py, r * z, 0, Math.PI * 2);
         ctx.stroke();
       });
 
-      // Background grid (subtle)
+      // 背景网格（subtle）
       ctx.strokeStyle = 'rgba(243, 244, 246, 0.5)';
       ctx.lineWidth = 0.5;
       const gridSize = 40 * z;
@@ -1517,15 +1616,13 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         ctx.stroke();
       }
 
-      // Sort nodes by Z depth for proper layering
-      const sortedNodes = [...nodes].sort((a, b) => {
-        const za = getNodeDepthConfig(a.type).z;
-        const zb = getNodeDepthConfig(b.type).z;
-        return za - zb;
-      });
+      // 按层级排序节点（外层先画，中心后画，确保中心在最上层）
+      const levels = computeNodeLevels(nodes, edges);
+      const sortedNodes = [...nodes].sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0));
 
-      // Draw edges first (behind nodes)
       dashOffsetRef.current -= 0.5;
+
+      // ===== 画连线（直线） =====
       edges.forEach(edge => {
         const src = nodes.find(n => n.id === edge.source);
         const tgt = nodes.find(n => n.id === edge.target);
@@ -1538,66 +1635,52 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const sSrc = toScreen(src.x, src.y);
         const sTgt = toScreen(tgt.x, tgt.y);
 
-        let sx = sSrc.x, sy = sSrc.y, tx = sTgt.x, ty = sTgt.y;
-        const dx = tx - sx;
-        const dy = ty - sy;
+        const srcCfg = NODE_RADIAL_CONFIG[src.type];
+        const tgtCfg = NODE_RADIAL_CONFIG[tgt.type];
+
+        // 计算从圆边缘出发/到达的直线端点
+        const dx = sTgt.x - sSrc.x;
+        const dy = sTgt.y - sSrc.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < 1) return;
         const nx = dx / dist;
         const ny = dy / dist;
 
-        const srcDepth = getNodeDepthConfig(src.type);
-        const tgtDepth = getNodeDepthConfig(tgt.type);
-        const srcOffset = src.type === 'ontology' ? src.width * srcDepth.scale * z / 2 + 2 :
-          src.type === 'data' ? Math.min(src.width, src.height) * srcDepth.scale * z / 2 + 2 :
-            src.type === 'skill' ? Math.max(src.width, src.height) * srcDepth.scale * z / 2 + 2 :
-              src.width * srcDepth.scale * z / 2 + 4;
-        const tgtOffset = tgt.type === 'ontology' ? tgt.width * tgtDepth.scale * z / 2 + 6 :
-          tgt.type === 'data' ? Math.min(tgt.width, tgt.height) * tgtDepth.scale * z / 2 + 6 :
-            tgt.type === 'skill' ? Math.max(tgt.width, tgt.height) * tgtDepth.scale * z / 2 + 6 :
-              tgt.width * tgtDepth.scale * z / 2 + 8;
-
-        sx += nx * srcOffset;
-        sy += ny * srcOffset;
-        tx -= nx * tgtOffset;
-        ty -= ny * tgtOffset;
-
-        const midY = (sy + ty) / 2;
-        const cp1x = sx;
-        const cp1y = midY;
-        const cp2x = tx;
-        const cp2y = midY;
+        const sx = sSrc.x + nx * srcCfg.radius * z;
+        const sy = sSrc.y + ny * srcCfg.radius * z;
+        const tx = sTgt.x - nx * tgtCfg.radius * z;
+        const ty = sTgt.y - ny * tgtCfg.radius * z;
 
         ctx.save();
 
-        // Edge drop shadow (subtle)
+        // 连线阴影
         ctx.beginPath();
         ctx.moveTo(sx, sy);
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
-        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-        ctx.lineWidth = (isEdgeActive ? 2.5 : 1.5) + 2;
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+        ctx.lineWidth = (isEdgeActive ? 2.5 : 1.5) + 1;
         ctx.stroke();
 
-        // Main edge with gradient-like effect (brighter at source, darker at target)
+        // 主连线
         ctx.beginPath();
         ctx.moveTo(sx, sy);
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
+        ctx.lineTo(tx, ty);
 
-        const srcColor = NODE_TYPE_CONFIG[src.type].color;
-        const edgeColor = isEdgeActive ? srcColor : '#D1D5DB';
+        const srcColor = srcCfg.color;
+        const edgeColor = isEdgeActive ? srcColor : hexToRgba(srcColor, 0.35);
         ctx.strokeStyle = edgeColor;
         ctx.lineWidth = isEdgeActive ? 2.5 : 1.5;
 
         if (isEdgeActive) {
-          ctx.setLineDash([8, 6]);
+          ctx.setLineDash([6, 4]);
           ctx.lineDashOffset = dashOffsetRef.current;
         }
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Arrowhead
-        const arrowLen = 10 * z;
-        const arrowAngle = Math.atan2(ty - cp2y, tx - cp2x);
+        // 箭头
+        const arrowLen = 8 * z;
+        const arrowAngle = Math.atan2(ty - sy, tx - sx);
         ctx.beginPath();
         ctx.moveTo(tx, ty);
         ctx.lineTo(
@@ -1615,120 +1698,143 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         ctx.restore();
       });
 
-      // Draw nodes (sorted by Z)
+      // ===== 流动光点动画 =====
+      const particles = flowParticlesRef.current;
+      for (const p of particles) {
+        const edge = edges.find(e => e.id === p.edgeId);
+        if (!edge) continue;
+        const src = nodes.find(n => n.id === edge.source);
+        const tgt = nodes.find(n => n.id === edge.target);
+        if (!src || !tgt) continue;
+
+        p.t += p.speed;
+        if (p.t > 1) p.t = 0;
+
+        const sSrc = toScreen(src.x, src.y);
+        const sTgt = toScreen(tgt.x, tgt.y);
+        const srcCfg = NODE_RADIAL_CONFIG[src.type];
+        const tgtCfg = NODE_RADIAL_CONFIG[tgt.type];
+
+        const dx = sTgt.x - sSrc.x;
+        const dy = sTgt.y - sSrc.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) continue;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        const sx = sSrc.x + nx * srcCfg.radius * z;
+        const sy = sSrc.y + ny * srcCfg.radius * z;
+        const tx = sTgt.x - nx * tgtCfg.radius * z;
+        const ty = sTgt.y - ny * tgtCfg.radius * z;
+
+        const px = sx + (tx - sx) * p.t;
+        const py = sy + (ty - sy) * p.t;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px, py, 3 * z, 0, Math.PI * 2);
+        ctx.fillStyle = srcCfg.color;
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // ===== 画节点（圆形） =====
       sortedNodes.forEach(node => {
         const isActive = activeNodeId === node.id;
         const isHovered = hoveredNode === node.id;
-        const config = NODE_TYPE_CONFIG[node.type];
-        const depth = getNodeDepthConfig(node.type);
+        const cfg = NODE_RADIAL_CONFIG[node.type];
+        const lvl = levels.get(node.id) || 0;
 
         const pos = toScreen(node.x, node.y);
         const nsx = pos.x;
         const nsy = pos.y;
-        const nw = node.width * depth.scale * z;
-        const nh = node.height * depth.scale * z;
 
-        // Hover lift effect
-        const liftOffset = isHovered ? -4 * z : 0;
-        const shadowOffsetX = isHovered ? 2 * z : 3 * z;
-        const shadowOffsetY = isHovered ? 6 * z : 4 * z;
-        const shadowBlur = isHovered ? 20 * z : 10 * z;
-        const shadowOpacity = isHovered ? 0.35 : 0.2;
+        // hover 放大 1.2x
+        const hoverScale = isHovered ? 1.2 : 1.0;
+        const nr = cfg.radius * z * hoverScale;
+
+        // 3D深度效果：向外逐渐变暗
+        const depthFade = cfg.depthOpacity;
 
         ctx.save();
+        ctx.globalAlpha = depthFade;
 
-        // Apply brightness/desaturation for bottom layers
-        if (depth.opacity < 1) {
-          ctx.globalAlpha = depth.opacity;
-        }
-
-        // === Layer 1: Bottom shadow (thickness) ===
+        // --- 底影：偏移 (2px, 3px) 的同色系半透明圆 ---
         ctx.save();
-        ctx.shadowColor = `rgba(0,0,0,${shadowOpacity})`;
-        ctx.shadowBlur = shadowBlur;
-        ctx.shadowOffsetX = shadowOffsetX;
-        ctx.shadowOffsetY = shadowOffsetY;
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        drawNodeShapePath(ctx, node.type, nsx + shadowOffsetX * 0.3, nsy + shadowOffsetY * 0.3 + liftOffset, nw, nh);
+        ctx.beginPath();
+        ctx.arc(nsx + 2 * z, nsy + 3 * z, nr, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(cfg.color, 0.25);
         ctx.fill();
         ctx.restore();
 
-        // === Layer 2: Main body with glow ===
+        // --- 主体：径向渐变填充圆 ---
         ctx.save();
+
+        // active/hover 发光
         if (isActive || isHovered) {
-          const glowColor = config.color + (isActive ? '99' : '66');
-          const glowBlur = isActive ? 24 * z : 16 * z;
+          const glowColor = cfg.color + (isActive ? '88' : '55');
           ctx.shadowColor = glowColor;
-          ctx.shadowBlur = glowBlur;
+          ctx.shadowBlur = isActive ? 28 * z : 18 * z;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
         }
 
-        // Gradient fill
-        const grad = ctx.createLinearGradient(nsx - nw / 2, nsy - nh / 2, nsx + nw / 2, nsy + nh / 2);
-        if (isActive) {
-          grad.addColorStop(0, '#FFFFFF');
-          grad.addColorStop(1, config.bg);
-        } else if (isHovered) {
-          grad.addColorStop(0, '#FAFAFA');
-          grad.addColorStop(1, config.bg);
+        // 径向渐变：中心亮 → 边缘暗
+        const grad = ctx.createRadialGradient(
+          nsx - nr * 0.25, nsy - nr * 0.25, nr * 0.1,
+          nsx, nsy, nr
+        );
+        if (node.type === 'intent') {
+          // 意图节点：紫色→粉色渐变
+          grad.addColorStop(0, '#A78BFA');
+          grad.addColorStop(0.5, '#8B5CF6');
+          grad.addColorStop(1, '#EC4899');
         } else {
-          grad.addColorStop(0, '#FFFFFF');
-          grad.addColorStop(1, config.bg);
+          grad.addColorStop(0, lightenColor(cfg.color, 30));
+          grad.addColorStop(0.6, cfg.color);
+          grad.addColorStop(1, darkenColor(cfg.color, 20));
         }
         ctx.fillStyle = grad;
 
-        drawNodeShapePath(ctx, node.type, nsx, nsy + liftOffset, nw, nh);
+        ctx.beginPath();
+        ctx.arc(nsx, nsy, nr, 0, Math.PI * 2);
         ctx.fill();
 
-        // Stroke
+        // 白色 2px 边框
         ctx.shadowColor = 'transparent';
-        ctx.lineWidth = isActive ? 2.5 : (isHovered ? 2 : 1.5);
-        ctx.strokeStyle = isActive ? config.color : (isHovered ? '#9CA3AF' : '#E5E7EB');
+        ctx.lineWidth = isActive ? 2.5 : 2;
+        ctx.strokeStyle = isActive ? '#FFFFFF' : 'rgba(255,255,255,0.8)';
         ctx.stroke();
 
-        // Extra border for constraint
-        if (node.type === 'constraint') {
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = config.color + '44';
-          ctx.setLineDash([4, 3]);
-          drawNodeShapePath(ctx, node.type, nsx, nsy + liftOffset, nw, nh);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
         ctx.restore();
 
-        // === Layer 3: Text / Icon ===
-        const iconSize = 14 * z;
-        const iconX = nsx - nw / 2 + 18 * z;
-        const iconY = nsy + liftOffset - 1;
-
-        // Icon background circle
-        ctx.beginPath();
-        ctx.arc(iconX, iconY, 10 * z, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? config.color : config.bg;
-        ctx.fill();
-
-        // Icon text
-        ctx.fillStyle = isActive ? '#FFFFFF' : config.color;
-        ctx.font = `bold ${Math.max(8, 10 * z)}px sans-serif`;
+        // --- 图标：圆内的首字母（白色） ---
+        ctx.save();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `bold ${Math.max(10, (cfg.radius * 0.5) * z * hoverScale)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const iconChar = node.type === 'intent' ? 'I' :
-          node.type === 'ontology' ? 'O' :
-            node.type === 'data' ? 'D' :
-              node.type === 'skill' ? 'S' :
-                node.type === 'constraint' ? 'C' :
-                  node.type === 'simulation' ? 'M' : 'R';
-        ctx.fillText(iconChar, iconX, iconY);
+        const iconChar = node.type === 'intent' ? '意' :
+          node.type === 'ontology' ? '本' :
+            node.type === 'data' ? '数' :
+              node.type === 'skill' ? '技' :
+                node.type === 'constraint' ? '约' :
+                  node.type === 'simulation' ? '推' : '果';
+        ctx.fillText(iconChar, nsx, nsy);
+        ctx.restore();
 
-        // Node label
-        ctx.fillStyle = isActive ? config.color : '#1F2937';
-        ctx.font = isActive ? `bold ${Math.max(8, 11 * z)}px sans-serif` : `500 ${Math.max(8, 11 * z)}px sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        const labelX = iconX + 16 * z;
-        const maxLabelWidth = nw - 40 * z;
+        // --- 文字：白色，位于圆下方 10px 处 ---
+        ctx.save();
+        ctx.fillStyle = isActive ? cfg.color : '#4B5563';
+        ctx.font = isActive
+          ? `bold ${Math.max(9, 11 * z)}px sans-serif`
+          : `500 ${Math.max(9, 11 * z)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const labelY = nsy + nr + 10 * z;
+        const maxLabelWidth = 100 * z;
         let displayLabel = node.label;
         if (ctx.measureText(displayLabel).width > maxLabelWidth) {
           while (ctx.measureText(displayLabel + '...').width > maxLabelWidth && displayLabel.length > 0) {
@@ -1736,37 +1842,19 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           }
           displayLabel += '...';
         }
-        ctx.fillText(displayLabel, labelX, nsy + liftOffset);
+        ctx.fillText(displayLabel, nsx, labelY);
+        ctx.restore();
 
-        // Active pulse effect
+        // --- active 脉冲效果 ---
         if (isActive) {
-          const pulseRadius = (Math.max(node.width, node.height) / 2 + 8 + Math.sin(Date.now() / 300) * 4) * depth.scale * z;
+          const pulseR = nr + 6 * z + Math.sin(Date.now() / 300) * 3 * z;
+          ctx.save();
           ctx.beginPath();
-          if (node.type === 'ontology') {
-            ctx.arc(nsx, nsy + liftOffset, pulseRadius, 0, Math.PI * 2);
-          } else if (node.type === 'data') {
-            ctx.moveTo(nsx, nsy + liftOffset - pulseRadius);
-            ctx.lineTo(nsx + pulseRadius, nsy + liftOffset);
-            ctx.lineTo(nsx, nsy + liftOffset + pulseRadius);
-            ctx.lineTo(nsx - pulseRadius, nsy + liftOffset);
-            ctx.closePath();
-          } else {
-            const pr = 6 * z;
-            const py = nsy + liftOffset;
-            ctx.moveTo(nsx - pulseRadius + pr, py - pulseRadius * 0.6);
-            ctx.lineTo(nsx + pulseRadius - pr, py - pulseRadius * 0.6);
-            ctx.quadraticCurveTo(nsx + pulseRadius, py - pulseRadius * 0.6, nsx + pulseRadius, py - pulseRadius * 0.6 + pr);
-            ctx.lineTo(nsx + pulseRadius, py + pulseRadius * 0.6 - pr);
-            ctx.quadraticCurveTo(nsx + pulseRadius, py + pulseRadius * 0.6, nsx + pulseRadius - pr, py + pulseRadius * 0.6);
-            ctx.lineTo(nsx - pulseRadius + pr, py + pulseRadius * 0.6);
-            ctx.quadraticCurveTo(nsx - pulseRadius, py + pulseRadius * 0.6, nsx - pulseRadius, py + pulseRadius * 0.6 - pr);
-            ctx.lineTo(nsx - pulseRadius, py - pulseRadius * 0.6 + pr);
-            ctx.quadraticCurveTo(nsx - pulseRadius, py - pulseRadius * 0.6, nsx - pulseRadius + pr, py - pulseRadius * 0.6);
-            ctx.closePath();
-          }
-          ctx.strokeStyle = config.color + '33';
+          ctx.arc(nsx, nsy, pulseR, 0, Math.PI * 2);
+          ctx.strokeStyle = cfg.color + '33';
           ctx.lineWidth = 2;
           ctx.stroke();
+          ctx.restore();
         }
 
         ctx.restore();
@@ -1801,25 +1889,15 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     let found: GraphNode | null = null;
     for (const node of nodes) {
-      const depth = getNodeDepthConfig(node.type);
+      const cfg = NODE_RADIAL_CONFIG[node.type];
       const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
       const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
-      const nw = node.width * depth.scale * z;
-      const nh = node.height * depth.scale * z;
-      const halfW = nw / 2;
-      const halfH = nh / 2;
-      if (node.type === 'ontology') {
-        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
-        if (dist <= halfW) found = node;
-      } else if (node.type === 'data') {
-        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
-        if (dist <= Math.min(halfW, halfH)) found = node;
-      } else {
-        if (mx >= nsx - halfW && mx <= nsx + halfW && my >= nsy - halfH && my <= nsy + halfH) {
-          found = node;
-        }
+      const nr = cfg.radius * z * (hoveredNode === node.id ? 1.2 : 1.0);
+      const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
+      if (dist <= nr) {
+        found = node;
+        break;
       }
-      if (found) break;
     }
 
     if (found) {
@@ -1857,9 +1935,9 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         <div className="flex items-center gap-3">
           {/* Legend */}
           <div className="flex items-center gap-2">
-            {(Object.entries(NODE_TYPE_CONFIG) as [GraphNodeType, typeof NODE_TYPE_CONFIG['intent']][]).map(([type, cfg]) => (
+            {(Object.entries(NODE_RADIAL_CONFIG) as [GraphNodeType, typeof NODE_RADIAL_CONFIG['intent']][]).map(([type, cfg]) => (
               <div key={type} className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: cfg.color }} />
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
                 <span className="text-[10px] text-gray-500">{cfg.label}</span>
               </div>
             ))}
@@ -1887,10 +1965,10 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: NODE_TYPE_CONFIG[hoveredNodeData.type].color }} />
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NODE_RADIAL_CONFIG[hoveredNodeData.type].color }} />
               <span className="text-xs font-bold text-gray-900">{hoveredNodeData.label}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: NODE_TYPE_CONFIG[hoveredNodeData.type].color }}>
-                {NODE_TYPE_CONFIG[hoveredNodeData.type].label}
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: NODE_RADIAL_CONFIG[hoveredNodeData.type].color }}>
+                {NODE_RADIAL_CONFIG[hoveredNodeData.type].label}
               </span>
             </div>
             <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">{hoveredNodeData.description}</p>
@@ -1931,4 +2009,35 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       </div>
     </div>
   );
+}
+
+// ============================================================
+// 颜色工具函数
+// ============================================================
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function lightenColor(hex: string, percent: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const newR = Math.min(255, Math.round(r + (255 - r) * percent / 100));
+  const newG = Math.min(255, Math.round(g + (255 - g) * percent / 100));
+  const newB = Math.min(255, Math.round(b + (255 - b) * percent / 100));
+  return `rgb(${newR},${newG},${newB})`;
+}
+
+function darkenColor(hex: string, percent: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const newR = Math.max(0, Math.round(r * (1 - percent / 100)));
+  const newG = Math.max(0, Math.round(g * (1 - percent / 100)));
+  const newB = Math.max(0, Math.round(b * (1 - percent / 100)));
+  return `rgb(${newR},${newG},${newB})`;
 }

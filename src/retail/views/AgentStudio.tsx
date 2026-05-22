@@ -1099,7 +1099,87 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const svgRef = React.useRef<SVGSVGElement>(null);
 
   const graph = React.useMemo(() => buildAgentGraph(activeAgentId), [activeAgentId]);
-  const { nodes, edges } = graph;
+  const { nodes: rawNodes, edges } = graph;
+
+  // ============================================================
+  // Radial layout: compute positions from topological layers (BFS from intent)
+  // ============================================================
+  const CENTER_X = 400;
+  const CENTER_Y = 360;
+  const LAYER_RADII: Record<number, number> = {
+    0: 0,     // intent
+    1: 150,   // ontology + data
+    2: 260,   // skill
+    3: 370,   // constraint + simulation
+    4: 460,   // result
+  };
+  const NODE_RADIUS: Record<NodeType, number> = {
+    intent: 40,
+    ontology: 28,
+    data: 28,
+    skill: 24,
+    constraint: 20,
+    simulation: 20,
+    result: 18,
+  };
+  const NODE_COLORS: Record<NodeType, { fill: string; dark: string; glow: string }> = {
+    intent:     { fill: '#8B5CF6', dark: '#7C3AED', glow: 'rgba(139,92,246,0.5)' },
+    ontology:   { fill: '#3B82F6', dark: '#2563EB', glow: 'rgba(59,130,246,0.45)' },
+    data:       { fill: '#06B6D4', dark: '#0891B2', glow: 'rgba(6,182,212,0.45)' },
+    skill:      { fill: '#F59E0B', dark: '#D97706', glow: 'rgba(245,158,11,0.45)' },
+    constraint: { fill: '#EF4444', dark: '#DC2626', glow: 'rgba(239,68,68,0.45)' },
+    simulation: { fill: '#6366F1', dark: '#4F46E5', glow: 'rgba(99,102,241,0.45)' },
+    result:     { fill: '#10B981', dark: '#059669', glow: 'rgba(16,185,129,0.45)' },
+  };
+
+  // BFS to compute layer for each node
+  const nodes = React.useMemo(() => {
+    const layerMap = new Map<string, number>();
+    // Find intent node as root
+    const intentNode = rawNodes.find(n => n.type === 'intent');
+    if (!intentNode) return rawNodes;
+
+    // BFS from intent
+    const queue: string[] = [intentNode.id];
+    layerMap.set(intentNode.id, 0);
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      const currLayer = layerMap.get(curr)!;
+      edges.filter(e => e.source === curr).forEach(e => {
+        if (!layerMap.has(e.target) || layerMap.get(e.target)! > currLayer + 1) {
+          layerMap.set(e.target, currLayer + 1);
+          queue.push(e.target);
+        }
+      });
+    }
+
+    // Group nodes by layer
+    const layerGroups = new Map<number, GraphNode[]>();
+    rawNodes.forEach(n => {
+      const layer = layerMap.get(n.id) ?? 4;
+      if (!layerGroups.has(layer)) layerGroups.set(layer, []);
+      layerGroups.get(layer)!.push(n);
+    });
+
+    // Assign positions
+    const positioned: GraphNode[] = [];
+    layerGroups.forEach((groupNodes, layer) => {
+      const radius = LAYER_RADII[layer] ?? 460;
+      const count = groupNodes.length;
+      const angleStep = count > 0 ? (2 * Math.PI) / count : 0;
+      // Start from -90° (top)
+      const startAngle = -Math.PI / 2;
+
+      groupNodes.forEach((n, i) => {
+        const angle = startAngle + i * angleStep;
+        const x = CENTER_X + radius * Math.cos(angle);
+        const y = CENTER_Y + radius * Math.sin(angle);
+        positioned.push({ ...n, x, y });
+      });
+    });
+
+    return positioned;
+  }, [rawNodes, edges]);
 
   // Build topological order for auto-play
   const topoOrder = React.useMemo(() => {
@@ -1132,17 +1212,16 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const padding = 24;
 
   // Compute node center
-  const getCenter = (n: GraphNode) => ({ x: n.x, y: n.y + n.height / 2 });
+  const getCenter = (n: GraphNode) => ({ x: n.x, y: n.y });
 
-  // Bezier edge path
+  // Straight line edge path
   const buildEdgePath = (src: GraphNode, tgt: GraphNode) => {
     const s = getCenter(src);
     const t = getCenter(tgt);
-    const midY = (s.y + t.y) / 2;
-    return `M ${s.x} ${s.y} C ${s.x} ${midY}, ${t.x} ${midY}, ${t.x} ${t.y}`;
+    return `M ${s.x} ${s.y} L ${t.x} ${t.y}`;
   };
 
-  // Check if edge is active (source node is active)
+  // Check if edge is active (on auto-play path)
   const isEdgeActive = (edge: GraphEdge) => {
     if (!activeNodeId) return false;
     const activeIdx = topoOrder.indexOf(activeNodeId);
@@ -1153,28 +1232,30 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
   const activeNode = nodes.find(n => n.id === activeNodeId);
 
-  // Z-axis depth configuration
-  const getZDepth = (type: NodeType): number => {
-    if (type === 'intent' || type === 'data') return 2;
-    if (type === 'ontology' || type === 'skill') return 1;
-    return 0; // constraint, simulation, result
+  // Get layer for depth effect
+  const getNodeLayer = (nodeId: string): number => {
+    const idx = topoOrder.indexOf(nodeId);
+    if (idx === 0) return 0;
+    // Approximate layer by distance from center
+    const n = nodes.find(nn => nn.id === nodeId);
+    if (!n) return 4;
+    const dx = n.x - CENTER_X;
+    const dy = n.y - CENTER_Y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 50) return 0;
+    if (dist < 200) return 1;
+    if (dist < 310) return 2;
+    if (dist < 420) return 3;
+    return 4;
   };
 
-  const getNodeDepthStyle = (type: NodeType) => {
-    const z = getZDepth(type);
-    if (z === 2) {
-      return { scale: 1.15, opacity: 1.0, brightness: 1.0, glowIntensity: 1.0 };
-    }
-    if (z === 1) {
-      return { scale: 1.0, opacity: 1.0, brightness: 1.0, glowIntensity: 0.6 };
-    }
-    return { scale: 0.9, opacity: 0.85, brightness: 0.85, glowIntensity: 0.3 };
+  // Depth style: center is biggest/brightest, outer is smaller/dimmer
+  const getNodeDepthStyle = (nodeId: string) => {
+    const layer = getNodeLayer(nodeId);
+    const scales = [1.0, 0.95, 0.88, 0.82, 0.75];
+    const opacities = [1.0, 1.0, 0.95, 0.9, 0.85];
+    return { scale: scales[layer] ?? 0.75, opacity: opacities[layer] ?? 0.85 };
   };
-
-  // Sort nodes by Z depth (render back to front)
-  const sortedNodes = React.useMemo(() => {
-    return [...nodes].sort((a, b) => getZDepth(a.type) - getZDepth(b.type));
-  }, [nodes]);
 
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -1206,7 +1287,7 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     setZoom(prev => Math.max(0.3, Math.min(3.0, prev + delta)));
   };
 
-  // Edge gradient ID generator
+  // Edge gradient ID generator (radial: source to target)
   const getEdgeGradientId = (edgeId: string) => `edge-grad-${edgeId}`;
 
   return (
@@ -1241,11 +1322,11 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           { type: 'simulation', label: '推演' },
           { type: 'result', label: '结果' },
         ] as { type: NodeType; label: string }[]).map(item => {
-          const cfg = NODE_TYPE_CONFIG[item.type];
+          const col = NODE_COLORS[item.type];
           return (
-            <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.color }} />
-              <span className="text-[10px] font-medium" style={{ color: cfg.color }}>{item.label}</span>
+            <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: `${col.fill}15`, border: `1px solid ${col.fill}40` }}>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.fill }} />
+              <span className="text-[10px] font-medium" style={{ color: col.dark }}>{item.label}</span>
             </div>
           );
         })}
@@ -1267,49 +1348,49 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           onWheel={handleWheel}
         >
           <defs>
-            {/* Arrow marker */}
-            <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#4F46E5" />
-            </marker>
-            <marker id="arrowhead-default" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#9CA3AF" />
-            </marker>
-            {/* Glow filter */}
-            <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="6" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            {/* Intent gradient: purple to pink */}
+            <radialGradient id="grad-intent" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#A78BFA" />
+              <stop offset="50%" stopColor="#8B5CF6" />
+              <stop offset="100%" stopColor="#EC4899" />
+            </radialGradient>
+            {/* Other node gradients (bright to dark) */}
+            <radialGradient id="grad-ontology" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#60A5FA" />
+              <stop offset="100%" stopColor="#3B82F6" />
+            </radialGradient>
+            <radialGradient id="grad-data" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#22D3EE" />
+              <stop offset="100%" stopColor="#06B6D4" />
+            </radialGradient>
+            <radialGradient id="grad-skill" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#FBBF24" />
+              <stop offset="100%" stopColor="#F59E0B" />
+            </radialGradient>
+            <radialGradient id="grad-constraint" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#F87171" />
+              <stop offset="100%" stopColor="#EF4444" />
+            </radialGradient>
+            <radialGradient id="grad-simulation" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#818CF8" />
+              <stop offset="100%" stopColor="#6366F1" />
+            </radialGradient>
+            <radialGradient id="grad-result" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#34D399" />
+              <stop offset="100%" stopColor="#10B981" />
+            </radialGradient>
+
+            {/* Drop shadow for nodes */}
+            <filter id="node-shadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000" floodOpacity="0.3" />
+            </filter>
+            <filter id="node-shadow-hover" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="8" stdDeviation="14" floodColor="#000" floodOpacity="0.4" />
             </filter>
             <filter id="shadow-sm" x="-10%" y="-10%" width="120%" height="130%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.1" />
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.2" />
             </filter>
-            {/* Enhanced glow filters for depth */}
-            <filter id="glow-strong" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="10" result="blur1" />
-              <feGaussianBlur stdDeviation="4" result="blur2" />
-              <feMerge>
-                <feMergeNode in="blur1" />
-                <feMergeNode in="blur2" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="glow-medium" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="6" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            {/* Drop shadow for edges */}
-            <filter id="edge-shadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="1" dy="2" stdDeviation="2" floodColor="#000" floodOpacity="0.25" />
-            </filter>
-            {/* 3D card shadow filter */}
-            <filter id="card-shadow" x="-20%" y="-20%" width="150%" height="150%">
-              <feDropShadow dx="3" dy="4" stdDeviation="3" floodColor="#000" floodOpacity="0.25" />
-            </filter>
-            <filter id="card-shadow-hover" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="2" dy="6" stdDeviation="8" floodColor="#000" floodOpacity="0.35" />
-            </filter>
+
             {/* Animated dash pattern */}
             <style>{`
               @keyframes flowDash {
@@ -1319,39 +1400,56 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                 animation: flowDash 1s linear infinite;
               }
               @keyframes pulseGlow {
-                0%, 100% { opacity: 0.5; }
-                50% { opacity: 1; }
+                0%, 100% { opacity: 0.4; }
+                50% { opacity: 0.9; }
               }
               .pulse-glow {
-                animation: pulseGlow 1.5s ease-in-out infinite;
+                animation: pulseGlow 2s ease-in-out infinite;
+              }
+              @keyframes flowParticle {
+                0% { offset-distance: 0%; opacity: 1; }
+                100% { offset-distance: 100%; opacity: 0; }
+              }
+              .flow-particle {
+                animation: flowParticle 1.5s linear infinite;
               }
             `}</style>
-            {/* Edge gradients for each edge */}
+
+            {/* Edge gradients for each edge (source color -> target color, source bright -> target dim) */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.source);
               const tgt = nodes.find(n => n.id === edge.target);
               if (!src || !tgt) return null;
-              const srcCfg = NODE_TYPE_CONFIG[src.type];
-              const tgtCfg = NODE_TYPE_CONFIG[tgt.type];
+              const srcCol = NODE_COLORS[src.type];
+              const tgtCol = NODE_COLORS[tgt.type];
+              const s = getCenter(src);
+              const t = getCenter(tgt);
+              const dx = t.x - s.x;
+              const dy = t.y - s.y;
+              const len = Math.sqrt(dx * dx + dy * dy) || 1;
+              const x1Pct = 0;
+              const y1Pct = 0;
+              const x2Pct = 100 * (dx / len);
+              const y2Pct = 100 * (dy / len);
               return (
-                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor={srcCfg.color} stopOpacity={0.9} />
-                  <stop offset="100%" stopColor={tgtCfg.color} stopOpacity={0.5} />
+                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1={`${x1Pct}%`} y1={`${y1Pct}%`} x2={`${x2Pct}%`} y2={`${y2Pct}%`}>
+                  <stop offset="0%" stopColor={srcCol.fill} stopOpacity={0.9} />
+                  <stop offset="100%" stopColor={tgtCol.fill} stopOpacity={0.3} />
                 </linearGradient>
               );
             })}
           </defs>
 
           {/* Background concentric circles (subtle grid) */}
-          <g opacity="0.08">
-            <circle cx="400" cy="360" r="100" fill="none" stroke="#6366F1" strokeWidth="1"/>
-            <circle cx="400" cy="360" r="200" fill="none" stroke="#6366F1" strokeWidth="1"/>
-            <circle cx="400" cy="360" r="300" fill="none" stroke="#6366F1" strokeWidth="1"/>
+          <g opacity="0.06">
+            <circle cx={CENTER_X} cy={CENTER_Y} r="100" fill="none" stroke="#6366F1" strokeWidth="1"/>
+            <circle cx={CENTER_X} cy={CENTER_Y} r="200" fill="none" stroke="#6366F1" strokeWidth="1"/>
+            <circle cx={CENTER_X} cy={CENTER_Y} r="300" fill="none" stroke="#6366F1" strokeWidth="1"/>
           </g>
 
           {/* Main transform group for pan and zoom */}
           <g transform={`translate(${panX},${panY}) scale(${zoom})`}>
-            {/* Edges */}
+            {/* Edges - straight lines */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.source);
               const tgt = nodes.find(n => n.id === edge.target);
@@ -1359,103 +1457,84 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
               const active = isEdgeActive(edge);
               const path = buildEdgePath(src, tgt);
               const gradId = getEdgeGradientId(edge.id);
+              const srcCol = NODE_COLORS[src.type];
+
+              // Shorten line so it doesn't overlap node circles
+              const s = getCenter(src);
+              const t = getCenter(tgt);
+              const dx = t.x - s.x;
+              const dy = t.y - s.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              const srcR = NODE_RADIUS[src.type];
+              const tgtR = NODE_RADIUS[tgt.type];
+              const shortenRatio = dist > 0 ? (srcR + 2) / dist : 0;
+              const endShortenRatio = dist > 0 ? (tgtR + 2) / dist : 0;
+              const sx = s.x + dx * shortenRatio;
+              const sy = s.y + dy * shortenRatio;
+              const ex = t.x - dx * endShortenRatio;
+              const ey = t.y - dy * endShortenRatio;
+              const shortPath = `M ${sx} ${sy} L ${ex} ${ey}`;
+
               return (
                 <g key={edge.id}>
-                  {/* Drop shadow line beneath edge */}
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke="#000000"
-                    strokeWidth={active ? 4 : 2.5}
-                    strokeOpacity="0.15"
-                    transform="translate(1, 2)"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                  {/* Background edge */}
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={active ? '#C7D2FE' : '#E5E7EB'}
-                    strokeWidth={active ? 3 : 1.5}
+                  {/* Base line */}
+                  <line
+                    x1={sx} y1={sy} x2={ex} y2={ey}
+                    stroke={active ? srcCol.fill : '#475569'}
+                    strokeWidth={active ? 2.5 : 1.5}
+                    strokeOpacity={active ? 0.9 : 0.35}
                     className="transition-all duration-500"
                   />
-                  {/* Flowing dash edge with gradient */}
+                  {/* Flowing dash on active edges */}
                   {active && (
-                    <path
-                      d={path}
-                      fill="none"
+                    <line
+                      x1={sx} y1={sy} x2={ex} y2={ey}
                       stroke={`url(#${gradId})`}
                       strokeWidth={2.5}
                       strokeDasharray="6 6"
-                      markerEnd="url(#arrowhead-active)"
                       className="edge-flowing"
-                      filter="url(#edge-shadow)"
+                      strokeOpacity={0.9}
                     />
                   )}
-                  {!active && (
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke={`url(#${gradId})`}
-                      strokeWidth={1.5}
-                      markerEnd="url(#arrowhead-default)"
-                    />
-                  )}
-                  {/* Edge label */}
-                  {edge.label && (
-                    <text
-                      x={(getCenter(src).x + getCenter(tgt).x) / 2}
-                      y={(getCenter(src).y + getCenter(tgt).y) / 2 - 4}
-                      textAnchor="middle"
-                      fill={active ? '#4F46E5' : '#9CA3AF'}
-                      fontSize="9"
-                      fontWeight="500"
-                      className="transition-all duration-500"
-                    >
-                      {edge.label}
-                    </text>
+                  {/* Flowing light dot on active edges */}
+                  {active && (
+                    <>
+                      <circle r="3" fill={srcCol.fill} opacity="0.9" className="flow-particle">
+                        <animateMotion dur="1.5s" repeatCount="indefinite" path={shortPath} />
+                      </circle>
+                      <circle r="2" fill="#FFFFFF" opacity="0.8" className="flow-particle" style={{ animationDelay: '0.5s' }}>
+                        <animateMotion dur="1.5s" repeatCount="indefinite" path={shortPath} />
+                      </circle>
+                    </>
                   )}
                 </g>
               );
             })}
 
-            {/* Nodes - rendered back-to-front by Z depth */}
-            {sortedNodes.map(node => {
-              const cfg = NODE_TYPE_CONFIG[node.type];
+            {/* Nodes - all circles, rendered back-to-front by layer */}
+            {[...nodes].sort((a, b) => getNodeLayer(b.id) - getNodeLayer(a.id)).map(node => {
               const isActive = activeNodeId === node.id;
               const isHovered = hoveredNode === node.id;
               const Icon = TYPE_ICON[node.type];
-              const depth = getNodeDepthStyle(node.type);
-              const z = getZDepth(node.type);
+              const colors = NODE_COLORS[node.type];
+              const baseR = NODE_RADIUS[node.type];
+              const depth = getNodeDepthStyle(node.id);
+              const layer = getNodeLayer(node.id);
 
-              // Apply scale and hover lift
-              const nodeScale = isHovered ? depth.scale * 1.05 : depth.scale;
-              const liftOffset = isHovered ? -4 : 0;
+              // Hover: scale 1.2x and lift
+              const scale = isHovered ? depth.scale * 1.2 : depth.scale;
+              const r = baseR * scale;
+              const liftOffset = isHovered ? -6 : 0;
+              const opacity = isHovered ? 1.0 : depth.opacity;
 
               const cx = node.x;
-              const cy = node.y + node.height / 2;
-              const rx = (node.width / 2) * nodeScale;
-              const ry = (node.height / 2) * nodeScale;
+              const cy = node.y + liftOffset;
 
-              // Shadow offset for 3D thickness
-              const shadowOffsetX = 3;
-              const shadowOffsetY = 4;
+              // Gradient ID
+              const gradId = `grad-${node.type}`;
 
-              // Determine glow filter based on depth and hover
-              const glowFilter = isHovered
-                ? 'url(#glow-strong)'
-                : z === 2
-                  ? 'url(#glow-strong)'
-                  : z === 1
-                    ? 'url(#glow-medium)'
-                    : 'none';
-
-              // Determine shadow filter
-              const shadowFilter = isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)';
-
-              // Apply opacity/brightness
-              const nodeOpacity = depth.opacity;
-              const desaturate = depth.brightness < 1;
+              // Shadow color based on node type
+              const shadowColor = colors.fill;
 
               return (
                 <g
@@ -1464,133 +1543,91 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                   onMouseLeave={() => setHoveredNode(null)}
                   className="cursor-pointer"
                   style={{ transition: 'all 0.3s ease' }}
-                  opacity={nodeOpacity}
+                  opacity={opacity}
                 >
-                  {/* Pulsing glow for active node - stronger for top layer */}
+                  {/* Pulsing glow ring for active node */}
                   {isActive && (
-                    <ellipse
-                      cx={cx}
-                      cy={cy + liftOffset}
-                      rx={rx + 12 + z * 4}
-                      ry={ry + 12 + z * 4}
-                      fill={cfg.glow}
+                    <circle
+                      cx={cx} cy={cy} r={r + 10 + layer * 3}
+                      fill="none"
+                      stroke={colors.fill}
+                      strokeWidth={2}
                       className="pulse-glow"
-                      opacity={isHovered ? 1 : 0.8}
+                      opacity={0.6}
                     />
                   )}
 
-                  {/* Extra prominent glow for Z=2 nodes */}
-                  {z === 2 && !isActive && (
-                    <ellipse
+                  {/* Outer glow */}
+                  {(isActive || isHovered) && (
+                    <circle
+                      cx={cx} cy={cy} r={r + 6}
+                      fill={colors.glow}
+                      opacity={isHovered ? 0.6 : 0.4}
+                      className={isActive ? 'pulse-glow' : ''}
+                    />
+                  )}
+
+                  {/* Main circle body with gradient fill */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={r}
+                    fill={`url(#${gradId})`}
+                    stroke="#FFFFFF"
+                    strokeWidth={2}
+                    filter={isHovered ? 'url(#node-shadow-hover)' : 'url(#node-shadow)'}
+                    className="transition-all duration-300"
+                  />
+
+                  {/* Active node inner highlight */}
+                  {isActive && (
+                    <circle
                       cx={cx}
                       cy={cy}
-                      rx={rx + 8}
-                      ry={ry + 8}
-                      fill={cfg.glow}
-                      opacity={isHovered ? 0.5 : 0.25}
+                      r={r - 4}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.5)"
+                      strokeWidth={1.5}
+                      className="pulse-glow"
                     />
                   )}
 
-                  {/* Bottom shadow layer - simulates thickness */}
-                  {cfg.shape === 'circle' ? (
-                    <circle
-                      cx={cx + shadowOffsetX}
-                      cy={cy + shadowOffsetY + liftOffset}
-                      r={rx}
-                      fill="rgba(0,0,0,0.25)"
-                      className="transition-all duration-300"
-                    />
-                  ) : cfg.shape === 'diamond' ? (
-                    <polygon
-                      points={`${cx + shadowOffsetX},${node.y + liftOffset + shadowOffsetY} ${cx + rx + shadowOffsetX},${cy + liftOffset + shadowOffsetY} ${cx + shadowOffsetX},${node.y + node.height + liftOffset + shadowOffsetY} ${cx - rx + shadowOffsetX},${cy + liftOffset + shadowOffsetY}`}
-                      fill="rgba(0,0,0,0.25)"
-                      className="transition-all duration-300"
-                    />
-                  ) : (
-                    <rect
-                      x={node.x - rx + shadowOffsetX}
-                      y={node.y + liftOffset + shadowOffsetY}
-                      width={node.width * nodeScale}
-                      height={node.height * nodeScale}
-                      rx={10}
-                      fill="rgba(0,0,0,0.25)"
-                      className="transition-all duration-300"
-                    />
-                  )}
-
-                  {/* Main body layer */}
-                  {cfg.shape === 'circle' ? (
-                    <circle
-                      cx={cx}
-                      cy={cy + liftOffset}
-                      r={rx}
-                      fill={isActive ? cfg.color : cfg.bg}
-                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
-                      strokeWidth={isActive ? 3 : 2}
-                      filter={shadowFilter}
-                      className="transition-all duration-300"
-                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
-                    />
-                  ) : cfg.shape === 'diamond' ? (
-                    <polygon
-                      points={`${cx},${node.y + liftOffset} ${cx + rx},${cy + liftOffset} ${cx},${node.y + node.height + liftOffset} ${cx - rx},${cy + liftOffset}`}
-                      fill={isActive ? cfg.color : cfg.bg}
-                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
-                      strokeWidth={isActive ? 3 : 2}
-                      filter={shadowFilter}
-                      className="transition-all duration-300"
-                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
-                    />
-                  ) : (
-                    <rect
-                      x={node.x - rx}
-                      y={node.y + liftOffset}
-                      width={node.width * nodeScale}
-                      height={node.height * nodeScale}
-                      rx={10}
-                      fill={isActive ? cfg.color : cfg.bg}
-                      stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
-                      strokeWidth={isActive ? 3 : 2}
-                      filter={shadowFilter}
-                      className="transition-all duration-300"
-                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
-                    />
-                  )}
-
-                  {/* Icon */}
+                  {/* Icon at center */}
                   <foreignObject
-                    x={cx - 10}
-                    y={cy - 10 - (node.sublabel ? 6 : 0) + liftOffset}
-                    width={20}
-                    height={20}
+                    x={cx - r * 0.5}
+                    y={cy - r * 0.5}
+                    width={r}
+                    height={r}
                   >
                     <div className="flex items-center justify-center w-full h-full">
-                      <Icon size={14} color={isActive ? '#FFFFFF' : cfg.color} />
+                      <Icon size={Math.max(10, r * 0.5)} color="#FFFFFF" />
                     </div>
                   </foreignObject>
 
-                  {/* Label */}
+                  {/* Label below circle (outside, 8px below) */}
                   <text
                     x={cx}
-                    y={cy + 14 - (node.sublabel ? 2 : 0) + liftOffset}
+                    y={cy + r + 14}
                     textAnchor="middle"
-                    fill={isActive ? '#FFFFFF' : '#1F2937'}
-                    fontSize="11"
+                    fill="#FFFFFF"
+                    fontSize={node.type === 'intent' ? 13 : 11}
                     fontWeight="bold"
                     className="transition-all duration-300"
+                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
                   >
                     {node.label}
                   </text>
 
-                  {/* Sublabel */}
+                  {/* Sublabel below main label */}
                   {node.sublabel && (
                     <text
                       x={cx}
-                      y={cy + 26 + liftOffset}
+                      y={cy + r + 28}
                       textAnchor="middle"
-                      fill={isActive ? 'rgba(255,255,255,0.85)' : '#6B7280'}
+                      fill="rgba(255,255,255,0.75)"
                       fontSize="9"
                       className="transition-all duration-300"
+                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
                     >
                       {node.sublabel}
                     </text>
@@ -1600,39 +1637,39 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                   {isHovered && (
                     <g>
                       <rect
-                        x={Math.min(cx + 20, svgWidth - 220)}
-                        y={Math.max(node.y - 80 + liftOffset, 10)}
-                        width={200}
-                        height={node.output ? 100 : 72}
+                        x={Math.min(cx + 24, svgWidth - 230)}
+                        y={Math.max(cy - r - 90, 10)}
+                        width={210}
+                        height={node.output ? 110 : 78}
                         rx={10}
-                        fill="#FFFFFF"
-                        stroke="#E5E7EB"
+                        fill="rgba(15,23,42,0.92)"
+                        stroke={colors.fill}
                         strokeWidth={1}
                         filter="url(#shadow-sm)"
                       />
                       <text
-                        x={Math.min(cx + 32, svgWidth - 208)}
-                        y={Math.max(node.y - 60 + liftOffset, 30)}
-                        fill={cfg.color}
-                        fontSize="11"
+                        x={Math.min(cx + 36, svgWidth - 218)}
+                        y={Math.max(cy - r - 68, 32)}
+                        fill={colors.fill}
+                        fontSize="12"
                         fontWeight="bold"
                       >
                         {node.label}
                       </text>
                       <text
-                        x={Math.min(cx + 32, svgWidth - 208)}
-                        y={Math.max(node.y - 44 + liftOffset, 46)}
-                        fill="#6B7280"
-                        fontSize="9"
+                        x={Math.min(cx + 36, svgWidth - 218)}
+                        y={Math.max(cy - r - 50, 50)}
+                        fill="#94A3B8"
+                        fontSize="10"
                       >
-                        {node.description && node.description.length > 30 ? node.description.slice(0, 30) + '...' : node.description}
+                        {node.description && node.description.length > 34 ? node.description.slice(0, 34) + '...' : node.description}
                       </text>
                       {node.skills && node.skills.length > 0 && (
                         <text
-                          x={Math.min(cx + 32, svgWidth - 208)}
-                          y={Math.max(node.y - 30 + liftOffset, 60)}
-                          fill="#4F46E5"
-                          fontSize="8"
+                          x={Math.min(cx + 36, svgWidth - 218)}
+                          y={Math.max(cy - r - 34, 66)}
+                          fill="#818CF8"
+                          fontSize="9"
                           fontWeight="500"
                         >
                           Skills: {node.skills.slice(0, 2).join(', ')}
@@ -1640,10 +1677,10 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                       )}
                       {node.dataSources && node.dataSources.length > 0 && (
                         <text
-                          x={Math.min(cx + 32, svgWidth - 208)}
-                          y={Math.max(node.y - 18 + liftOffset, 72)}
-                          fill="#0891B2"
-                          fontSize="8"
+                          x={Math.min(cx + 36, svgWidth - 218)}
+                          y={Math.max(cy - r - 20, 80)}
+                          fill="#22D3EE"
+                          fontSize="9"
                           fontWeight="500"
                         >
                           Data: {node.dataSources.slice(0, 2).join(', ')}
@@ -1651,13 +1688,13 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                       )}
                       {node.output && (
                         <text
-                          x={Math.min(cx + 32, svgWidth - 208)}
-                          y={Math.max(node.y - 4 + liftOffset, 86)}
-                          fill="#059669"
-                          fontSize="8"
+                          x={Math.min(cx + 36, svgWidth - 218)}
+                          y={Math.max(cy - r - 4, 96)}
+                          fill="#34D399"
+                          fontSize="9"
                           fontWeight="500"
                         >
-                          {node.output.length > 35 ? node.output.slice(0, 35) + '...' : node.output}
+                          {node.output.length > 38 ? node.output.slice(0, 38) + '...' : node.output}
                         </text>
                       )}
                     </g>
@@ -1671,20 +1708,20 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
               <g>
                 <rect
                   x={padding}
-                  y={svgHeight - 44}
+                  y={svgHeight - 48}
                   width={svgWidth - padding * 2}
-                  height={32}
-                  rx={8}
-                  fill="#ECFDF5"
-                  stroke="#A7F3D0"
+                  height={36}
+                  rx={10}
+                  fill="rgba(16,185,129,0.15)"
+                  stroke="rgba(16,185,129,0.4)"
                   strokeWidth={1}
                 />
                 <text
                   x={svgWidth / 2}
-                  y={svgHeight - 24}
+                  y={svgHeight - 26}
                   textAnchor="middle"
-                  fill="#059669"
-                  fontSize="11"
+                  fill="#34D399"
+                  fontSize="12"
                   fontWeight="500"
                 >
                   {activeNode.output}
@@ -1698,10 +1735,10 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       {/* Bottom stats */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: '调用技能', value: `${nodes.reduce((s, n) => s + (n.skills?.length || 0), 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
-          { label: '数据源', value: `${[...new Set(nodes.flatMap(n => n.dataSources || []))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
-          { label: '本体实体', value: `${[...new Set(nodes.flatMap(n => n.ontologies || []).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
-          { label: '推演节点', value: `${nodes.length}个`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
+          { label: '调用技能', value: `${rawNodes.reduce((s, n) => s + (n.skills?.length || 0), 0)}个`, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
+          { label: '数据源', value: `${[...new Set(rawNodes.flatMap(n => n.dataSources || []))].length}个`, icon: Database, color: 'text-cyan-600 bg-cyan-50' },
+          { label: '本体实体', value: `${[...new Set(rawNodes.flatMap(n => n.ontologies || []).filter(Boolean))].length}个`, icon: Layers, color: 'text-indigo-600 bg-indigo-50' },
+          { label: '推演节点', value: `${rawNodes.length}个`, icon: GitBranch, color: 'text-emerald-600 bg-emerald-50' },
         ].map(stat => (
           <div key={stat.label} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
             <div className={`p-1.5 rounded-md ${stat.color}`}>
