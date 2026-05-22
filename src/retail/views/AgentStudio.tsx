@@ -1095,6 +1095,8 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1.0);
   const [isDragging, setIsDragging] = useState(false);
+  const [enteredNodes, setEnteredNodes] = useState<Set<string>>(new Set());
+  const [enteredEdges, setEnteredEdges] = useState<Set<string>>(new Set());
   const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const svgRef = React.useRef<SVGSVGElement>(null);
 
@@ -1102,52 +1104,39 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const { nodes: rawNodes, edges } = graph;
 
   // ============================================================
-  // Radial layout: compute positions from topological layers (BFS from intent)
+  // Horizontal layered layout: 5 columns left-to-right
   // ============================================================
-  const CENTER_X = 400;
-  const CENTER_Y = 360;
-  const LAYER_RADII: Record<number, number> = {
-    0: 0,     // intent
-    1: 150,   // ontology + data
-    2: 260,   // skill
-    3: 370,   // constraint + simulation
-    4: 460,   // result
-  };
-  const NODE_RADIUS: Record<NodeType, number> = {
-    intent: 40,
-    ontology: 28,
-    data: 28,
-    skill: 24,
-    constraint: 20,
-    simulation: 20,
-    result: 18,
-  };
-  const NODE_COLORS: Record<NodeType, { fill: string; dark: string; glow: string }> = {
-    intent:     { fill: '#8B5CF6', dark: '#7C3AED', glow: 'rgba(139,92,246,0.5)' },
-    ontology:   { fill: '#3B82F6', dark: '#2563EB', glow: 'rgba(59,130,246,0.45)' },
-    data:       { fill: '#06B6D4', dark: '#0891B2', glow: 'rgba(6,182,212,0.45)' },
-    skill:      { fill: '#F59E0B', dark: '#D97706', glow: 'rgba(245,158,11,0.45)' },
-    constraint: { fill: '#EF4444', dark: '#DC2626', glow: 'rgba(239,68,68,0.45)' },
-    simulation: { fill: '#6366F1', dark: '#4F46E5', glow: 'rgba(99,102,241,0.45)' },
-    result:     { fill: '#10B981', dark: '#059669', glow: 'rgba(16,185,129,0.45)' },
+  const COLUMN_X = [80, 260, 440, 620, 800];
+  const COLUMN_SPACING = 180;
+  const NODE_W = 140;
+  const NODE_H = 52;
+  const NODE_GAP = 64;
+
+  const TYPE_BAR_COLOR: Record<NodeType, string> = {
+    intent: '#722ED1',
+    ontology: '#1677FF',
+    data: '#13C2C2',
+    skill: '#FA8C16',
+    constraint: '#F5222D',
+    simulation: '#2F54EB',
+    result: '#52C41A',
   };
 
-  // BFS to compute layer for each node
-  const nodes = React.useMemo(() => {
-    const layerMap = new Map<string, number>();
-    // Find intent node as root
+  // BFS to compute layer for each node (0-4)
+  const { nodes, topoOrder, layerMap } = React.useMemo(() => {
+    const lMap = new Map<string, number>();
     const intentNode = rawNodes.find(n => n.type === 'intent');
-    if (!intentNode) return rawNodes;
+    if (!intentNode) return { nodes: rawNodes, topoOrder: [] as string[], layerMap: lMap };
 
     // BFS from intent
     const queue: string[] = [intentNode.id];
-    layerMap.set(intentNode.id, 0);
+    lMap.set(intentNode.id, 0);
     while (queue.length > 0) {
       const curr = queue.shift()!;
-      const currLayer = layerMap.get(curr)!;
+      const currLayer = lMap.get(curr)!;
       edges.filter(e => e.source === curr).forEach(e => {
-        if (!layerMap.has(e.target) || layerMap.get(e.target)! > currLayer + 1) {
-          layerMap.set(e.target, currLayer + 1);
+        if (!lMap.has(e.target) || lMap.get(e.target)! > currLayer + 1) {
+          lMap.set(e.target, currLayer + 1);
           queue.push(e.target);
         }
       });
@@ -1156,33 +1145,26 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     // Group nodes by layer
     const layerGroups = new Map<number, GraphNode[]>();
     rawNodes.forEach(n => {
-      const layer = layerMap.get(n.id) ?? 4;
+      const layer = lMap.get(n.id) ?? 4;
       if (!layerGroups.has(layer)) layerGroups.set(layer, []);
       layerGroups.get(layer)!.push(n);
     });
 
-    // Assign positions
+    // Assign horizontal positions
     const positioned: GraphNode[] = [];
     layerGroups.forEach((groupNodes, layer) => {
-      const radius = LAYER_RADII[layer] ?? 460;
+      const x = COLUMN_X[layer] ?? (COLUMN_X[4] + (layer - 4) * COLUMN_SPACING);
       const count = groupNodes.length;
-      const angleStep = count > 0 ? (2 * Math.PI) / count : 0;
-      // Start from -90° (top)
-      const startAngle = -Math.PI / 2;
+      const totalH = count * NODE_H + (count - 1) * NODE_GAP;
+      const startY = 300 - totalH / 2;
 
       groupNodes.forEach((n, i) => {
-        const angle = startAngle + i * angleStep;
-        const x = CENTER_X + radius * Math.cos(angle);
-        const y = CENTER_Y + radius * Math.sin(angle);
-        positioned.push({ ...n, x, y });
+        const y = startY + i * (NODE_H + NODE_GAP);
+        positioned.push({ ...n, x, y, width: NODE_W, height: NODE_H });
       });
     });
 
-    return positioned;
-  }, [rawNodes, edges]);
-
-  // Build topological order for auto-play
-  const topoOrder = React.useMemo(() => {
+    // Topological order for auto-play
     const visited = new Set<string>();
     const order: string[] = [];
     function visit(nid: string) {
@@ -1191,11 +1173,34 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       edges.filter(e => e.source === nid).forEach(e => visit(e.target));
       order.push(nid);
     }
-    nodes.forEach(n => { if (!edges.some(e => e.target === n.id)) visit(n.id); });
-    return order;
-  }, [nodes, edges]);
+    positioned.forEach(n => { if (!edges.some(e => e.target === n.id)) visit(n.id); });
 
-  // Auto-play: light up nodes in sequence
+    return { nodes: positioned, topoOrder: order, layerMap: lMap };
+  }, [rawNodes, edges]);
+
+  // Entrance animation: nodes appear in topological order with stagger
+  React.useEffect(() => {
+    setEnteredNodes(new Set());
+    setEnteredEdges(new Set());
+    const timers: NodeJS.Timeout[] = [];
+
+    topoOrder.forEach((nodeId, i) => {
+      const t = setTimeout(() => {
+        setEnteredNodes(prev => new Set([...prev, nodeId]));
+        // Edges appear after both source and target are entered
+        edges.forEach(edge => {
+          if (edge.target === nodeId) {
+            setEnteredEdges(prev => new Set([...prev, edge.id]));
+          }
+        });
+      }, i * 80);
+      timers.push(t);
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [topoOrder, edges, activeAgentId]);
+
+  // Auto-play: highlight nodes in sequence
   React.useEffect(() => {
     if (!autoPlay) return;
     let idx = 0;
@@ -1203,22 +1208,24 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     const timer = setInterval(() => {
       idx = (idx + 1) % topoOrder.length;
       setActiveNodeId(topoOrder[idx]);
-    }, 1800);
+    }, 1500);
     return () => clearInterval(timer);
   }, [topoOrder, autoPlay, activeAgentId]);
 
-  const svgWidth = 800;
-  const svgHeight = 720;
-  const padding = 24;
+  const svgWidth = 1000;
+  const svgHeight = 640;
 
-  // Compute node center
-  const getCenter = (n: GraphNode) => ({ x: n.x, y: n.y });
-
-  // Straight line edge path
+  // Bezier curve edge path (horizontal flow)
   const buildEdgePath = (src: GraphNode, tgt: GraphNode) => {
-    const s = getCenter(src);
-    const t = getCenter(tgt);
-    return `M ${s.x} ${s.y} L ${t.x} ${t.y}`;
+    const sx = src.x + src.width;
+    const sy = src.y + src.height / 2;
+    const tx = tgt.x;
+    const ty = tgt.y + tgt.height / 2;
+    const c1x = sx + (tx - sx) * 0.5;
+    const c1y = sy;
+    const c2x = tx - (tx - sx) * 0.5;
+    const c2y = ty;
+    return `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
   };
 
   // Check if edge is active (on auto-play path)
@@ -1232,41 +1239,11 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
   const activeNode = nodes.find(n => n.id === activeNodeId);
 
-  // Get layer for depth effect
-  const getNodeLayer = (nodeId: string): number => {
-    const idx = topoOrder.indexOf(nodeId);
-    if (idx === 0) return 0;
-    // Approximate layer by distance from center
-    const n = nodes.find(nn => nn.id === nodeId);
-    if (!n) return 4;
-    const dx = n.x - CENTER_X;
-    const dy = n.y - CENTER_Y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 50) return 0;
-    if (dist < 200) return 1;
-    if (dist < 310) return 2;
-    if (dist < 420) return 3;
-    return 4;
-  };
-
-  // Depth style: center is biggest/brightest, outer is smaller/dimmer
-  const getNodeDepthStyle = (nodeId: string) => {
-    const layer = getNodeLayer(nodeId);
-    const scales = [1.0, 0.95, 0.88, 0.82, 0.75];
-    const opacities = [1.0, 1.0, 0.95, 0.9, 0.85];
-    return { scale: scales[layer] ?? 0.75, opacity: opacities[layer] ?? 0.85 };
-  };
-
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     setIsDragging(true);
-    dragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      panX,
-      panY,
-    };
+    dragStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
   };
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -1277,17 +1254,15 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     setPanY(dragStartRef.current.panY + dy);
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const handleMouseUp = () => setIsDragging(false);
 
   const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const delta = e.deltaY > 0 ? -0.08 : 0.08;
     setZoom(prev => Math.max(0.3, Math.min(3.0, prev + delta)));
   };
 
-  // Edge gradient ID generator (radial: source to target)
+  // Edge gradient ID
   const getEdgeGradientId = (edgeId: string) => `edge-grad-${edgeId}`;
 
   return (
@@ -1321,25 +1296,28 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           { type: 'constraint', label: '约束' },
           { type: 'simulation', label: '推演' },
           { type: 'result', label: '结果' },
-        ] as { type: NodeType; label: string }[]).map(item => {
-          const col = NODE_COLORS[item.type];
-          return (
-            <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: `${col.fill}15`, border: `1px solid ${col.fill}40` }}>
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.fill }} />
-              <span className="text-[10px] font-medium" style={{ color: col.dark }}>{item.label}</span>
-            </div>
-          );
-        })}
+        ] as { type: NodeType; label: string }[]).map(item => (
+          <div key={item.type} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-gray-200">
+            <div className="w-1 h-3 rounded-full" style={{ background: TYPE_BAR_COLOR[item.type] }} />
+            <span className="text-[10px] font-medium text-gray-600">{item.label}</span>
+          </div>
+        ))}
       </div>
 
-      {/* SVG Network Graph */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+      {/* SVG Flow Graph */}
+      <div
+        className="rounded-lg overflow-hidden"
+        style={{
+          background: '#F8FAFC',
+          backgroundImage: 'radial-gradient(circle, #E2E8F0 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      >
         <svg
           ref={svgRef}
-          width={svgWidth}
+          width="100%"
           height={svgHeight}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="min-w-[800px]"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -1348,327 +1326,267 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           onWheel={handleWheel}
         >
           <defs>
-            {/* Intent gradient: purple to pink */}
-            <radialGradient id="grad-intent" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#A78BFA" />
-              <stop offset="50%" stopColor="#8B5CF6" />
-              <stop offset="100%" stopColor="#EC4899" />
-            </radialGradient>
-            {/* Other node gradients (bright to dark) */}
-            <radialGradient id="grad-ontology" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#60A5FA" />
-              <stop offset="100%" stopColor="#3B82F6" />
-            </radialGradient>
-            <radialGradient id="grad-data" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#22D3EE" />
-              <stop offset="100%" stopColor="#06B6D4" />
-            </radialGradient>
-            <radialGradient id="grad-skill" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#FBBF24" />
-              <stop offset="100%" stopColor="#F59E0B" />
-            </radialGradient>
-            <radialGradient id="grad-constraint" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#F87171" />
-              <stop offset="100%" stopColor="#EF4444" />
-            </radialGradient>
-            <radialGradient id="grad-simulation" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#818CF8" />
-              <stop offset="100%" stopColor="#6366F1" />
-            </radialGradient>
-            <radialGradient id="grad-result" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#34D399" />
-              <stop offset="100%" stopColor="#10B981" />
-            </radialGradient>
-
-            {/* Drop shadow for nodes */}
-            <filter id="node-shadow" x="-50%" y="-50%" width="200%" height="200%">
-              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000" floodOpacity="0.3" />
-            </filter>
-            <filter id="node-shadow-hover" x="-50%" y="-50%" width="200%" height="200%">
-              <feDropShadow dx="0" dy="8" stdDeviation="14" floodColor="#000" floodOpacity="0.4" />
-            </filter>
-            <filter id="shadow-sm" x="-10%" y="-10%" width="120%" height="130%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.2" />
-            </filter>
-
-            {/* Animated dash pattern */}
-            <style>{`
-              @keyframes flowDash {
-                to { stroke-dashoffset: -24; }
-              }
-              .edge-flowing {
-                animation: flowDash 1s linear infinite;
-              }
-              @keyframes pulseGlow {
-                0%, 100% { opacity: 0.4; }
-                50% { opacity: 0.9; }
-              }
-              .pulse-glow {
-                animation: pulseGlow 2s ease-in-out infinite;
-              }
-              @keyframes flowParticle {
-                0% { offset-distance: 0%; opacity: 1; }
-                100% { offset-distance: 100%; opacity: 0; }
-              }
-              .flow-particle {
-                animation: flowParticle 1.5s linear infinite;
-              }
-            `}</style>
-
-            {/* Edge gradients for each edge (source color -> target color, source bright -> target dim) */}
+            {/* Edge gradients: source bright -> target dim */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.source);
               const tgt = nodes.find(n => n.id === edge.target);
               if (!src || !tgt) return null;
-              const srcCol = NODE_COLORS[src.type];
-              const tgtCol = NODE_COLORS[tgt.type];
-              const s = getCenter(src);
-              const t = getCenter(tgt);
-              const dx = t.x - s.x;
-              const dy = t.y - s.y;
-              const len = Math.sqrt(dx * dx + dy * dy) || 1;
-              const x1Pct = 0;
-              const y1Pct = 0;
-              const x2Pct = 100 * (dx / len);
-              const y2Pct = 100 * (dy / len);
+              const srcColor = TYPE_BAR_COLOR[src.type];
+              const tgtColor = TYPE_BAR_COLOR[tgt.type];
               return (
-                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1={`${x1Pct}%`} y1={`${y1Pct}%`} x2={`${x2Pct}%`} y2={`${y2Pct}%`}>
-                  <stop offset="0%" stopColor={srcCol.fill} stopOpacity={0.9} />
-                  <stop offset="100%" stopColor={tgtCol.fill} stopOpacity={0.3} />
+                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor={srcColor} stopOpacity={0.9} />
+                  <stop offset="100%" stopColor={tgtColor} stopOpacity={0.3} />
                 </linearGradient>
               );
             })}
+
+            {/* Drop shadow for cards */}
+            <filter id="card-shadow" x="-10%" y="-20%" width="130%" height="160%">
+              <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.08" />
+            </filter>
+            <filter id="card-shadow-hover" x="-10%" y="-20%" width="130%" height="160%">
+              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000" floodOpacity="0.12" />
+            </filter>
+            <filter id="tooltip-shadow" x="-5%" y="-5%" width="115%" height="120%">
+              <feDropShadow dx="0" dy="3" stdDeviation="5" floodColor="#000" floodOpacity="0.15" />
+            </filter>
+
+            {/* CSS animations */}
+            <style>{`
+              @keyframes flowDash {
+                to { stroke-dashoffset: -20; }
+              }
+              .edge-flowing {
+                animation: flowDash 0.8s linear infinite;
+              }
+              @keyframes pulseGlow {
+                0%, 100% { opacity: 0.5; }
+                50% { opacity: 1; }
+              }
+              .pulse-glow {
+                animation: pulseGlow 1.5s ease-in-out infinite;
+              }
+              .node-card {
+                transition: transform 0.25s ease, filter 0.25s ease, opacity 0.3s ease-out;
+                transform-origin: center center;
+              }
+              .node-card:hover {
+                transform: translateY(-3px);
+              }
+              .node-enter {
+                opacity: 0;
+                transform: translateY(12px);
+              }
+              .node-enter-active {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            `}</style>
           </defs>
 
-          {/* Background concentric circles (subtle grid) */}
-          <g opacity="0.06">
-            <circle cx={CENTER_X} cy={CENTER_Y} r="100" fill="none" stroke="#6366F1" strokeWidth="1"/>
-            <circle cx={CENTER_X} cy={CENTER_Y} r="200" fill="none" stroke="#6366F1" strokeWidth="1"/>
-            <circle cx={CENTER_X} cy={CENTER_Y} r="300" fill="none" stroke="#6366F1" strokeWidth="1"/>
-          </g>
-
           {/* Main transform group for pan and zoom */}
-          <g transform={`translate(${panX},${panY}) scale(${zoom})`}>
-            {/* Edges - straight lines */}
+          <g transform={`translate(${panX},${panY}) scale(${zoom})`} style={{ transformOrigin: 'center center' }}>
+            {/* Edges - Bezier curves */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.source);
               const tgt = nodes.find(n => n.id === edge.target);
               if (!src || !tgt) return null;
               const active = isEdgeActive(edge);
-              const path = buildEdgePath(src, tgt);
+              const entered = enteredEdges.has(edge.id);
+              const pathD = buildEdgePath(src, tgt);
               const gradId = getEdgeGradientId(edge.id);
-              const srcCol = NODE_COLORS[src.type];
-
-              // Shorten line so it doesn't overlap node circles
-              const s = getCenter(src);
-              const t = getCenter(tgt);
-              const dx = t.x - s.x;
-              const dy = t.y - s.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              const srcR = NODE_RADIUS[src.type];
-              const tgtR = NODE_RADIUS[tgt.type];
-              const shortenRatio = dist > 0 ? (srcR + 2) / dist : 0;
-              const endShortenRatio = dist > 0 ? (tgtR + 2) / dist : 0;
-              const sx = s.x + dx * shortenRatio;
-              const sy = s.y + dy * shortenRatio;
-              const ex = t.x - dx * endShortenRatio;
-              const ey = t.y - dy * endShortenRatio;
-              const shortPath = `M ${sx} ${sy} L ${ex} ${ey}`;
+              const srcColor = TYPE_BAR_COLOR[src.type];
 
               return (
-                <g key={edge.id}>
+                <g key={edge.id} opacity={entered ? 1 : 0} style={{ transition: 'opacity 0.4s ease' }}>
                   {/* Base line */}
-                  <line
-                    x1={sx} y1={sy} x2={ex} y2={ey}
-                    stroke={active ? srcCol.fill : '#475569'}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={active ? srcColor : srcColor}
                     strokeWidth={active ? 2.5 : 1.5}
-                    strokeOpacity={active ? 0.9 : 0.35}
-                    className="transition-all duration-500"
+                    strokeOpacity={active ? 0.9 : 0.4}
+                    style={{ transition: 'all 0.4s ease' }}
                   />
                   {/* Flowing dash on active edges */}
                   {active && (
-                    <line
-                      x1={sx} y1={sy} x2={ex} y2={ey}
+                    <path
+                      d={pathD}
+                      fill="none"
                       stroke={`url(#${gradId})`}
                       strokeWidth={2.5}
-                      strokeDasharray="6 6"
+                      strokeDasharray="5 5"
                       className="edge-flowing"
                       strokeOpacity={0.9}
                     />
                   )}
-                  {/* Flowing light dot on active edges */}
-                  {active && (
-                    <>
-                      <circle r="3" fill={srcCol.fill} opacity="0.9" className="flow-particle">
-                        <animateMotion dur="1.5s" repeatCount="indefinite" path={shortPath} />
-                      </circle>
-                      <circle r="2" fill="#FFFFFF" opacity="0.8" className="flow-particle" style={{ animationDelay: '0.5s' }}>
-                        <animateMotion dur="1.5s" repeatCount="indefinite" path={shortPath} />
-                      </circle>
-                    </>
-                  )}
+                  {/* Flowing dot */}
+                  <circle r="3" fill={srcColor} opacity={active ? 0.8 : 0} style={{ transition: 'opacity 0.4s ease' }}>
+                    <animateMotion dur="2s" repeatCount="indefinite" path={pathD} />
+                  </circle>
                 </g>
               );
             })}
 
-            {/* Nodes - all circles, rendered back-to-front by layer */}
-            {[...nodes].sort((a, b) => getNodeLayer(b.id) - getNodeLayer(a.id)).map(node => {
+            {/* Nodes - card rectangles */}
+            {nodes.map(node => {
               const isActive = activeNodeId === node.id;
               const isHovered = hoveredNode === node.id;
               const Icon = TYPE_ICON[node.type];
-              const colors = NODE_COLORS[node.type];
-              const baseR = NODE_RADIUS[node.type];
-              const depth = getNodeDepthStyle(node.id);
-              const layer = getNodeLayer(node.id);
-
-              // Hover: scale 1.2x and lift
-              const scale = isHovered ? depth.scale * 1.2 : depth.scale;
-              const r = baseR * scale;
-              const liftOffset = isHovered ? -6 : 0;
-              const opacity = isHovered ? 1.0 : depth.opacity;
-
-              const cx = node.x;
-              const cy = node.y + liftOffset;
-
-              // Gradient ID
-              const gradId = `grad-${node.type}`;
-
-              // Shadow color based on node type
-              const shadowColor = colors.fill;
+              const barColor = TYPE_BAR_COLOR[node.type];
+              const entered = enteredNodes.has(node.id);
+              const cx = node.x + node.width / 2;
+              const cy = node.y + node.height / 2;
 
               return (
                 <g
                   key={node.id}
+                  className="node-card"
+                  style={{
+                    opacity: entered ? 1 : 0,
+                    transform: entered ? (isHovered ? 'translateY(-3px)' : 'translateY(0)') : 'translateY(12px)',
+                    transition: 'opacity 0.3s ease-out, transform 0.25s ease',
+                  }}
                   onMouseEnter={() => setHoveredNode(node.id)}
                   onMouseLeave={() => setHoveredNode(null)}
-                  className="cursor-pointer"
-                  style={{ transition: 'all 0.3s ease' }}
-                  opacity={opacity}
                 >
-                  {/* Pulsing glow ring for active node */}
+                  {/* Bottom shadow layer (3D depth) */}
+                  <rect
+                    x={node.x}
+                    y={node.y + 2}
+                    width={node.width}
+                    height={node.height}
+                    rx={8}
+                    fill="rgba(0,0,0,0.06)"
+                  />
+
+                  {/* Active glow */}
                   {isActive && (
-                    <circle
-                      cx={cx} cy={cy} r={r + 10 + layer * 3}
+                    <rect
+                      x={node.x - 3}
+                      y={node.y - 3}
+                      width={node.width + 6}
+                      height={node.height + 6}
+                      rx={10}
                       fill="none"
-                      stroke={colors.fill}
+                      stroke={barColor}
                       strokeWidth={2}
                       className="pulse-glow"
                       opacity={0.6}
                     />
                   )}
 
-                  {/* Outer glow */}
-                  {(isActive || isHovered) && (
-                    <circle
-                      cx={cx} cy={cy} r={r + 6}
-                      fill={colors.glow}
-                      opacity={isHovered ? 0.6 : 0.4}
-                      className={isActive ? 'pulse-glow' : ''}
-                    />
-                  )}
-
-                  {/* Main circle body with gradient fill */}
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill={`url(#${gradId})`}
-                    stroke="#FFFFFF"
-                    strokeWidth={2}
-                    filter={isHovered ? 'url(#node-shadow-hover)' : 'url(#node-shadow)'}
-                    className="transition-all duration-300"
+                  {/* Main card body */}
+                  <rect
+                    x={node.x}
+                    y={node.y}
+                    width={node.width}
+                    height={node.height}
+                    rx={8}
+                    fill="#FFFFFF"
+                    filter={isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)'}
+                    style={{
+                      transform: isActive ? 'scale(1.03)' : 'scale(1)',
+                      transformOrigin: `${cx}px ${cy}px`,
+                      transition: 'transform 0.25s ease',
+                    }}
                   />
 
-                  {/* Active node inner highlight */}
-                  {isActive && (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={r - 4}
-                      fill="none"
-                      stroke="rgba(255,255,255,0.5)"
-                      strokeWidth={1.5}
-                      className="pulse-glow"
-                    />
-                  )}
+                  {/* Left color bar */}
+                  <rect
+                    x={node.x}
+                    y={node.y}
+                    width={4}
+                    height={node.height}
+                    rx={8}
+                    fill={barColor}
+                    clipPath={`inset(0 ${node.width - 4}px 0 0 round 8px)`}
+                  />
 
-                  {/* Icon at center */}
+                  {/* Icon */}
                   <foreignObject
-                    x={cx - r * 0.5}
-                    y={cy - r * 0.5}
-                    width={r}
-                    height={r}
+                    x={node.x + 10}
+                    y={node.y + (node.height - 18) / 2}
+                    width={18}
+                    height={18}
                   >
                     <div className="flex items-center justify-center w-full h-full">
-                      <Icon size={Math.max(10, r * 0.5)} color="#FFFFFF" />
+                      <Icon size={14} color={barColor} />
                     </div>
                   </foreignObject>
 
-                  {/* Label below circle (outside, 8px below) */}
+                  {/* Label */}
                   <text
-                    x={cx}
-                    y={cy + r + 14}
-                    textAnchor="middle"
-                    fill="#FFFFFF"
-                    fontSize={node.type === 'intent' ? 13 : 11}
-                    fontWeight="bold"
-                    className="transition-all duration-300"
-                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
+                    x={node.x + 32}
+                    y={node.y + 22}
+                    fill="#1F2937"
+                    fontSize="14"
+                    fontWeight="500"
                   >
                     {node.label}
                   </text>
 
-                  {/* Sublabel below main label */}
+                  {/* Sublabel */}
                   {node.sublabel && (
                     <text
-                      x={cx}
-                      y={cy + r + 28}
-                      textAnchor="middle"
-                      fill="rgba(255,255,255,0.75)"
-                      fontSize="9"
-                      className="transition-all duration-300"
-                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                      x={node.x + 32}
+                      y={node.y + 38}
+                      fill="#6B7280"
+                      fontSize="10"
                     >
                       {node.sublabel}
                     </text>
                   )}
 
-                  {/* Rich tooltip on hover */}
+                  {/* Hover tooltip */}
                   {isHovered && (
                     <g>
                       <rect
-                        x={Math.min(cx + 24, svgWidth - 230)}
-                        y={Math.max(cy - r - 90, 10)}
-                        width={210}
-                        height={node.output ? 110 : 78}
-                        rx={10}
-                        fill="rgba(15,23,42,0.92)"
-                        stroke={colors.fill}
+                        x={Math.min(node.x + node.width + 12, svgWidth - 240)}
+                        y={Math.max(node.y - 10, 8)}
+                        width={220}
+                        height={node.output ? 120 : 88}
+                        rx={8}
+                        fill="#FFFFFF"
+                        stroke="#E2E8F0"
                         strokeWidth={1}
-                        filter="url(#shadow-sm)"
+                        filter="url(#tooltip-shadow)"
+                      />
+                      {/* Color bar on tooltip */}
+                      <rect
+                        x={Math.min(node.x + node.width + 12, svgWidth - 240)}
+                        y={Math.max(node.y - 10, 8)}
+                        width={3}
+                        height={node.output ? 120 : 88}
+                        rx={8}
+                        fill={barColor}
+                        clipPath={`inset(0 217px 0 0 round 8px)`}
                       />
                       <text
-                        x={Math.min(cx + 36, svgWidth - 218)}
-                        y={Math.max(cy - r - 68, 32)}
-                        fill={colors.fill}
+                        x={Math.min(node.x + node.width + 24, svgWidth - 228)}
+                        y={Math.max(node.y + 10, 28)}
+                        fill={barColor}
                         fontSize="12"
                         fontWeight="bold"
                       >
                         {node.label}
                       </text>
                       <text
-                        x={Math.min(cx + 36, svgWidth - 218)}
-                        y={Math.max(cy - r - 50, 50)}
-                        fill="#94A3B8"
+                        x={Math.min(node.x + node.width + 24, svgWidth - 228)}
+                        y={Math.max(node.y + 28, 46)}
+                        fill="#6B7280"
                         fontSize="10"
                       >
-                        {node.description && node.description.length > 34 ? node.description.slice(0, 34) + '...' : node.description}
+                        {node.description && node.description.length > 36
+                          ? node.description.slice(0, 36) + '...'
+                          : node.description}
                       </text>
                       {node.skills && node.skills.length > 0 && (
                         <text
-                          x={Math.min(cx + 36, svgWidth - 218)}
-                          y={Math.max(cy - r - 34, 66)}
-                          fill="#818CF8"
+                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
+                          y={Math.max(node.y + 44, 62)}
+                          fill="#1677FF"
                           fontSize="9"
                           fontWeight="500"
                         >
@@ -1677,9 +1595,9 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                       )}
                       {node.dataSources && node.dataSources.length > 0 && (
                         <text
-                          x={Math.min(cx + 36, svgWidth - 218)}
-                          y={Math.max(cy - r - 20, 80)}
-                          fill="#22D3EE"
+                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
+                          y={Math.max(node.y + 58, 76)}
+                          fill="#13C2C2"
                           fontSize="9"
                           fontWeight="500"
                         >
@@ -1688,13 +1606,13 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                       )}
                       {node.output && (
                         <text
-                          x={Math.min(cx + 36, svgWidth - 218)}
-                          y={Math.max(cy - r - 4, 96)}
-                          fill="#34D399"
+                          x={Math.min(node.x + node.width + 24, svgWidth - 228)}
+                          y={Math.max(node.y + 72, 90)}
+                          fill="#52C41A"
                           fontSize="9"
                           fontWeight="500"
                         >
-                          {node.output.length > 38 ? node.output.slice(0, 38) + '...' : node.output}
+                          {node.output.length > 40 ? node.output.slice(0, 40) + '...' : node.output}
                         </text>
                       )}
                     </g>
@@ -1705,22 +1623,22 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
             {/* Active node output banner at bottom */}
             {activeNode?.output && (
-              <g>
+              <g opacity={enteredNodes.has(activeNode.id) ? 1 : 0} style={{ transition: 'opacity 0.4s ease' }}>
                 <rect
-                  x={padding}
-                  y={svgHeight - 48}
-                  width={svgWidth - padding * 2}
+                  x={svgWidth / 2 - 220}
+                  y={svgHeight - 52}
+                  width={440}
                   height={36}
-                  rx={10}
-                  fill="rgba(16,185,129,0.15)"
-                  stroke="rgba(16,185,129,0.4)"
+                  rx={8}
+                  fill="rgba(82,196,26,0.08)"
+                  stroke="rgba(82,196,26,0.3)"
                   strokeWidth={1}
                 />
                 <text
                   x={svgWidth / 2}
-                  y={svgHeight - 26}
+                  y={svgHeight - 30}
                   textAnchor="middle"
-                  fill="#34D399"
+                  fill="#52C41A"
                   fontSize="12"
                   fontWeight="500"
                 >

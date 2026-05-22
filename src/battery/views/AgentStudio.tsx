@@ -1017,16 +1017,6 @@ interface GraphEdge {
   label?: string;
 }
 
-const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; bg: string; label: string }> = {
-  intent:     { color: '#7C3AED', bg: '#F3E8FF', label: '意图' },
-  ontology:   { color: '#2563EB', bg: '#DBEAFE', label: '本体' },
-  data:       { color: '#0891B2', bg: '#CFFAFE', label: '数据' },
-  skill:      { color: '#D97706', bg: '#FEF3C7', label: '技能' },
-  constraint: { color: '#DC2626', bg: '#FEE2E2', label: '约束' },
-  simulation: { color: '#4F46E5', bg: '#E0E7FF', label: '推演' },
-  result:     { color: '#059669', bg: '#D1FAE5', label: '结果' },
-};
-
 // Agent a1: 产销匹配推演Agent
 const AGENT_A1_NODES: GraphNode[] = [
   // Layer 0: Intent (top center)
@@ -1201,152 +1191,35 @@ const B_ICON_MAP: Record<string, any> = {
   wrench: Wrench, shield: ShieldCheck, play: MonitorPlay, file: FileOutput,
 };
 
-// Draw different node shapes based on type
-function drawNodeShape(
-  ctx: CanvasRenderingContext2D,
-  type: GraphNodeType,
-  x: number, y: number,
-  w: number, h: number,
-  color: string,
-  isActive: boolean,
-  isHovered: boolean
-) {
-  const r = Math.min(w, h) * 0.2;
-  ctx.save();
-
-  // Shadow
-  ctx.shadowColor = isActive ? color + '66' : 'rgba(0,0,0,0.12)';
-  ctx.shadowBlur = isActive ? 16 : 8;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = isActive ? 4 : 2;
-
-  // Fill
-  ctx.fillStyle = isActive ? '#FFFFFF' : (isHovered ? '#FAFAFA' : '#FFFFFF');
-
-  // Glow for active
-  if (isActive) {
-    ctx.shadowColor = color + '99';
-    ctx.shadowBlur = 24;
-  }
-
-  ctx.beginPath();
-  switch (type) {
-    case 'ontology': // Circle
-      ctx.arc(x, y, w / 2, 0, Math.PI * 2);
-      break;
-    case 'data': // Diamond (rotated square)
-      ctx.moveTo(x, y - h / 2);
-      ctx.lineTo(x + w / 2, y);
-      ctx.lineTo(x, y + h / 2);
-      ctx.lineTo(x - w / 2, y);
-      ctx.closePath();
-      break;
-    case 'skill': // Hexagon
-      const hexR = Math.max(w, h) / 2;
-      for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i - Math.PI / 6;
-        const px = x + hexR * Math.cos(angle);
-        const py = y + hexR * Math.sin(angle) * 0.6;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      break;
-    default: // Rounded rect for intent, constraint, simulation, result
-      ctx.moveTo(x - w / 2 + r, y - h / 2);
-      ctx.lineTo(x + w / 2 - r, y - h / 2);
-      ctx.quadraticCurveTo(x + w / 2, y - h / 2, x + w / 2, y - h / 2 + r);
-      ctx.lineTo(x + w / 2, y + h / 2 - r);
-      ctx.quadraticCurveTo(x + w / 2, y + h / 2, x + w / 2 - r, y + h / 2);
-      ctx.lineTo(x - w / 2 + r, y + h / 2);
-      ctx.quadraticCurveTo(x - w / 2, y + h / 2, x - w / 2, y + h / 2 - r);
-      ctx.lineTo(x - w / 2, y - h / 2 + r);
-      ctx.quadraticCurveTo(x - w / 2, y - h / 2, x - w / 2 + r, y - h / 2);
-      ctx.closePath();
-      break;
-  }
-
-  ctx.fill();
-
-  // Stroke
-  ctx.shadowColor = 'transparent';
-  ctx.lineWidth = isActive ? 2.5 : (isHovered ? 2 : 1.5);
-  ctx.strokeStyle = isActive ? color : (isHovered ? '#9CA3AF' : '#E5E7EB');
-  ctx.stroke();
-
-  // Extra border for constraint
-  if (type === 'constraint') {
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = color + '44';
-    ctx.setLineDash([4, 3]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.restore();
-}
-
-// Helper: draw only the path (no fill/stroke) for a node shape, used by 3D rendering
-function drawNodeShapePath(
-  ctx: CanvasRenderingContext2D,
-  type: GraphNodeType,
-  x: number, y: number,
-  w: number, h: number
-) {
-  const r = Math.min(w, h) * 0.2;
-  switch (type) {
-    case 'ontology':
-      ctx.arc(x, y, w / 2, 0, Math.PI * 2);
-      break;
-    case 'data':
-      ctx.moveTo(x, y - h / 2);
-      ctx.lineTo(x + w / 2, y);
-      ctx.lineTo(x, y + h / 2);
-      ctx.lineTo(x - w / 2, y);
-      ctx.closePath();
-      break;
-    case 'skill': {
-      const hexR = Math.max(w, h) / 2;
-      for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i - Math.PI / 6;
-        const px = x + hexR * Math.cos(angle);
-        const py = y + hexR * Math.sin(angle) * 0.6;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      break;
-    }
-    default:
-      ctx.moveTo(x - w / 2 + r, y - h / 2);
-      ctx.lineTo(x + w / 2 - r, y - h / 2);
-      ctx.quadraticCurveTo(x + w / 2, y - h / 2, x + w / 2, y - h / 2 + r);
-      ctx.lineTo(x + w / 2, y + h / 2 - r);
-      ctx.quadraticCurveTo(x + w / 2, y + h / 2, x + w / 2 - r, y + h / 2);
-      ctx.lineTo(x - w / 2 + r, y + h / 2);
-      ctx.quadraticCurveTo(x - w / 2, y + h / 2, x - w / 2, y + h / 2 - r);
-      ctx.lineTo(x - w / 2, y - h / 2 + r);
-      ctx.quadraticCurveTo(x - w / 2, y - h / 2, x - w / 2 + r, y - h / 2);
-      ctx.closePath();
-      break;
-  }
-}
-
 // ============================================================
-// 中心辐射式知识图谱布局 —— 节点配置
+// 水平分层知识图谱布局 —— 节点配置
 // ============================================================
 
-const NODE_RADIAL_CONFIG: Record<GraphNodeType, { color: string; radius: number; label: string; depthOpacity: number }> = {
-  intent:     { color: '#8B5CF6', radius: 40, label: '意图', depthOpacity: 1.0 },
-  ontology:   { color: '#3B82F6', radius: 28, label: '本体', depthOpacity: 1.0 },
-  data:       { color: '#06B6D4', radius: 28, label: '数据', depthOpacity: 1.0 },
-  skill:      { color: '#F59E0B', radius: 24, label: '技能', depthOpacity: 0.95 },
-  constraint: { color: '#EF4444', radius: 20, label: '约束', depthOpacity: 0.9 },
-  simulation: { color: '#6366F1', radius: 20, label: '推演', depthOpacity: 0.9 },
-  result:     { color: '#10B981', radius: 18, label: '结果', depthOpacity: 0.85 },
+const NODE_CARD_W = 140;
+const NODE_CARD_H = 52;
+const COL_SPACING = 180;
+
+const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {
+  intent:     '#722ED1',
+  ontology:   '#1677FF',
+  data:       '#13C2C2',
+  skill:      '#FA8C16',
+  constraint: '#F5222D',
+  simulation: '#2F54EB',
+  result:     '#52C41A',
 };
 
-/** BFS 计算每个节点的拓扑层级（从意图节点出发） */
+const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; bg: string; label: string }> = {
+  intent:     { color: '#722ED1', bg: '#F3E8FF', label: '意图' },
+  ontology:   { color: '#1677FF', bg: '#DBEAFE', label: '本体' },
+  data:       { color: '#13C2C2', bg: '#CFFAFE', label: '数据' },
+  skill:      { color: '#FA8C16', bg: '#FEF3C7', label: '技能' },
+  constraint: { color: '#F5222D', bg: '#FEE2E2', label: '约束' },
+  simulation: { color: '#2F54EB', bg: '#E0E7FF', label: '推演' },
+  result:     { color: '#52C41A', bg: '#D1FAE5', label: '结果' },
+};
+
+/** BFS compute topological levels (from intent root) */
 function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, number> {
   const levels = new Map<string, number>();
   const adj = new Map<string, string[]>();
@@ -1361,7 +1234,6 @@ function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, 
     inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
   }
 
-  // 找到根节点（入度为0的intent节点）
   const queue: string[] = [];
   for (const [id, deg] of inDegree.entries()) {
     if (deg === 0) {
@@ -1382,7 +1254,6 @@ function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, 
     }
   }
 
-  // 未访问到的节点默认放最后一层
   let maxLevel = 0;
   for (const l of levels.values()) maxLevel = Math.max(maxLevel, l);
   for (const n of nodes) {
@@ -1394,13 +1265,11 @@ function computeNodeLevels(nodes: GraphNode[], edges: GraphEdge[]): Map<string, 
   return levels;
 }
 
-/** 按拓扑层级重新计算节点位置（中心辐射式） */
-function layoutRadial(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+/** Horizontal layered layout: 5 columns, evenly distributed vertically */
+function layoutHorizontal(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
   const levels = computeNodeLevels(nodes, edges);
-  const cx = 420;
-  const cy = 320;
 
-  // 按层级分组
+  // Group by level
   const levelGroups = new Map<number, GraphNode[]>();
   for (const n of nodes) {
     const lvl = levels.get(n.id) || 0;
@@ -1408,41 +1277,49 @@ function layoutRadial(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
     levelGroups.get(lvl)!.push(n);
   }
 
-  // 层级半径配置
-  const levelRadius: Record<number, number> = {
-    0: 0,
-    1: 150,
-    2: 260,
-    3: 370,
-    4: 460,
-  };
+  // Map levels to columns (0-4)
+  const uniqueLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
+  const levelToCol = new Map<number, number>();
+  uniqueLevels.forEach((lvl, idx) => levelToCol.set(lvl, Math.min(idx, 4)));
 
   const result: GraphNode[] = [];
+  const canvasH = 640;
+  const startX = 100; // left padding
 
   for (const [lvl, group] of levelGroups.entries()) {
-    const radius = levelRadius[lvl] ?? 460;
+    const col = levelToCol.get(lvl) || 0;
     const count = group.length;
+    const x = startX + col * COL_SPACING;
+    // Evenly distribute vertically
+    const totalH = count * NODE_CARD_H + (count - 1) * 20;
+    const startY = (canvasH - totalH) / 2 + NODE_CARD_H / 2;
 
-    if (lvl === 0) {
-      // 中心节点
-      for (const n of group) {
-        result.push({ ...n, x: cx, y: cy });
-      }
-    } else {
-      // 从 -90°（正上方）开始均匀分布
-      const angleStep = count > 1 ? (Math.PI * 2) / count : 0;
-      const startAngle = -Math.PI / 2;
-
-      group.forEach((n, idx) => {
-        const angle = startAngle + idx * angleStep;
-        const x = cx + radius * Math.cos(angle);
-        const y = cy + radius * Math.sin(angle);
-        result.push({ ...n, x, y });
-      });
-    }
+    group.forEach((n, idx) => {
+      const y = startY + idx * (NODE_CARD_H + 20);
+      result.push({ ...n, x, y });
+    });
   }
 
   return result;
+}
+
+/** Draw rounded rectangle path */
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  ctx.lineTo(x + rr, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+  ctx.lineTo(x, y + rr);
+  ctx.quadraticCurveTo(x, y, x + rr, y);
+  ctx.closePath();
 }
 
 function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
@@ -1451,7 +1328,6 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const animationRef = React.useRef<number>(0);
-  const dashOffsetRef = React.useRef(0);
   const flowParticlesRef = React.useRef<{ edgeId: string; t: number; speed: number }[]>([]);
 
   // Pan / Zoom refs (not state, to avoid re-renders during interaction)
@@ -1462,26 +1338,36 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const lastMouseRef = React.useRef<{ x: number; y: number } | null>(null);
   const [cursorStyle, setCursorStyle] = React.useState('grab');
 
+  // Entrance animation: each node has an animation progress (0~1)
+  const nodeAnimRef = React.useRef<Map<string, number>>(new Map());
+  const entranceStartRef = React.useRef(0);
+
   const rawGraph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
-  // 使用中心辐射式布局重新计算节点位置
+
+  // Horizontal layered layout: 5 columns
   const graph = React.useMemo(() => {
     return {
-      nodes: layoutRadial(rawGraph.nodes, rawGraph.edges),
+      nodes: layoutHorizontal(rawGraph.nodes, rawGraph.edges),
       edges: rawGraph.edges,
     };
   }, [activeAgentId, rawGraph]);
   const { nodes, edges } = graph;
 
-  // 初始化流动光点
+  // Initialize entrance animation and flow particles
   React.useEffect(() => {
+    entranceStartRef.current = performance.now();
+    const animMap = new Map<string, number>();
+    for (const n of nodes) animMap.set(n.id, 0);
+    nodeAnimRef.current = animMap;
+
     const particles: { edgeId: string; t: number; speed: number }[] = [];
     for (const edge of edges) {
-      particles.push({ edgeId: edge.id, t: Math.random(), speed: 0.003 + Math.random() * 0.004 });
+      particles.push({ edgeId: edge.id, t: Math.random(), speed: 0.002 + Math.random() * 0.003 });
     }
     flowParticlesRef.current = particles;
-  }, [edges]);
+  }, [nodes, edges]);
 
-  // Auto-play: nodes light up in sequence along BFS order
+  // Auto-play: highlight nodes in BFS sequence every 1.5s
   useEffect(() => {
     const levels = computeNodeLevels(nodes, edges);
     const sequence = [...nodes]
@@ -1492,7 +1378,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     const timer = setInterval(() => {
       idx = (idx + 1) % sequence.length;
       setActiveNodeId(sequence[idx]);
-    }, 2000);
+    }, 1500);
     return () => clearInterval(timer);
   }, [activeAgentId, nodes, edges]);
 
@@ -1522,12 +1408,13 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       const px = panXRef.current;
       const py = panYRef.current;
       for (const node of nodes) {
-        const cfg = NODE_RADIAL_CONFIG[node.type];
         const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
         const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
-        const nr = cfg.radius * z;
-        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
-        if (dist <= nr) { onNode = true; break; }
+        const nw = NODE_CARD_W * z;
+        const nh = NODE_CARD_H * z;
+        if (mx >= nsx - nw / 2 && mx <= nsx + nw / 2 && my >= nsy - nh / 2 && my <= nsy + nh / 2) {
+          onNode = true; break;
+        }
       }
       if (!onNode) {
         isDraggingRef.current = true;
@@ -1582,48 +1469,54 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       };
     };
 
+    // Lerp helper
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
     const render = () => {
-      ctx.clearRect(0, 0, cssWidth, cssHeight);
+      const now = performance.now();
       const z = zoomRef.current;
       const px = panXRef.current;
       const py = panYRef.current;
 
-      // 背景：同心圆网格
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.06)';
-      ctx.lineWidth = 1;
-      [100, 200, 300].forEach(r => {
-        ctx.beginPath();
-        ctx.arc(cssWidth / 2 + px, cssHeight / 2 + py, r * z, 0, Math.PI * 2);
-        ctx.stroke();
-      });
+      // Clear with background color
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-      // 背景网格（subtle）
-      ctx.strokeStyle = 'rgba(243, 244, 246, 0.5)';
-      ctx.lineWidth = 0.5;
-      const gridSize = 40 * z;
-      const startX = ((px % gridSize) + gridSize) % gridSize;
-      const startY = ((py % gridSize) + gridSize) % gridSize;
-      for (let gx = startX; gx < cssWidth; gx += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, cssHeight);
-        ctx.stroke();
-      }
-      for (let gy = startY; gy < cssHeight; gy += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(cssWidth, gy);
-        ctx.stroke();
+      // Subtle dot grid background
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.15)';
+      const dotSpacing = 24 * z;
+      const dotOffsetX = ((px % dotSpacing) + dotSpacing) % dotSpacing;
+      const dotOffsetY = ((py % dotSpacing) + dotSpacing) % dotSpacing;
+      const dotRadius = Math.max(0.5, 0.8 * z);
+      for (let gx = dotOffsetX; gx < cssWidth; gx += dotSpacing) {
+        for (let gy = dotOffsetY; gy < cssHeight; gy += dotSpacing) {
+          ctx.beginPath();
+          ctx.arc(gx, gy, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
-      // 按层级排序节点（外层先画，中心后画，确保中心在最上层）
+      // Update entrance animation progress
+      const entranceElapsed = now - entranceStartRef.current;
+      const animMap = nodeAnimRef.current;
       const levels = computeNodeLevels(nodes, edges);
-      const sortedNodes = [...nodes].sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0));
+      for (const node of nodes) {
+        const lvl = levels.get(node.id) || 0;
+        const delay = lvl * 80; // stagger 80ms per level
+        const progress = Math.min(1, Math.max(0, (entranceElapsed - delay) / 300));
+        animMap.set(node.id, easeOutCubic(progress));
+      }
 
-      dashOffsetRef.current -= 0.5;
+      // Compute edge visibility (only show when both endpoints have appeared)
+      const edgeVisible = (edge: GraphEdge) => {
+        const sp = animMap.get(edge.source) || 0;
+        const tp = animMap.get(edge.target) || 0;
+        return sp >= 1 && tp >= 1;
+      };
 
-      // ===== 画连线（直线） =====
+      // ===== Draw edges (Bezier curves) =====
       edges.forEach(edge => {
+        if (!edgeVisible(edge)) return;
         const src = nodes.find(n => n.id === edge.source);
         const tgt = nodes.find(n => n.id === edge.target);
         if (!src || !tgt) return;
@@ -1635,10 +1528,11 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const sSrc = toScreen(src.x, src.y);
         const sTgt = toScreen(tgt.x, tgt.y);
 
-        const srcCfg = NODE_RADIAL_CONFIG[src.type];
-        const tgtCfg = NODE_RADIAL_CONFIG[tgt.type];
+        const srcColor = NODE_TYPE_COLORS[src.type];
+        const edgeAlpha = isEdgeActive ? 0.9 : 0.4;
+        const edgeWidth = isEdgeActive ? 2.5 : 1.5;
 
-        // 计算从圆边缘出发/到达的直线端点
+        // Card boundary clipping for edge endpoints
         const dx = sTgt.x - sSrc.x;
         const dy = sTgt.y - sSrc.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1646,216 +1540,175 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const nx = dx / dist;
         const ny = dy / dist;
 
-        const sx = sSrc.x + nx * srcCfg.radius * z;
-        const sy = sSrc.y + ny * srcCfg.radius * z;
-        const tx = sTgt.x - nx * tgtCfg.radius * z;
-        const ty = sTgt.y - ny * tgtCfg.radius * z;
+        const nw = NODE_CARD_W * z;
+        const nh = NODE_CARD_H * z;
+        const halfW = nw / 2;
+        const halfH = nh / 2;
+
+        // Compute exit point from source card (right side)
+        const sx = sSrc.x + halfW;
+        const sy = sSrc.y + ny * Math.min(halfH, Math.abs(dy) * 0.3);
+
+        // Compute entry point to target card (left side)
+        const tx = sTgt.x - halfW;
+        const ty = sTgt.y - ny * Math.min(halfH, Math.abs(dy) * 0.3);
+
+        // Control points for cubic bezier
+        const cp1x = sx + Math.abs(tx - sx) * 0.5;
+        const cp1y = sy;
+        const cp2x = tx - Math.abs(tx - sx) * 0.5;
+        const cp2y = ty;
 
         ctx.save();
 
-        // 连线阴影
+        // Draw bezier curve
         ctx.beginPath();
         ctx.moveTo(sx, sy);
-        ctx.lineTo(tx, ty);
-        ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-        ctx.lineWidth = (isEdgeActive ? 2.5 : 1.5) + 1;
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
+        ctx.strokeStyle = hexToRgba(srcColor, edgeAlpha);
+        ctx.lineWidth = edgeWidth;
+        ctx.lineCap = 'round';
         ctx.stroke();
-
-        // 主连线
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(tx, ty);
-
-        const srcColor = srcCfg.color;
-        const edgeColor = isEdgeActive ? srcColor : hexToRgba(srcColor, 0.35);
-        ctx.strokeStyle = edgeColor;
-        ctx.lineWidth = isEdgeActive ? 2.5 : 1.5;
-
-        if (isEdgeActive) {
-          ctx.setLineDash([6, 4]);
-          ctx.lineDashOffset = dashOffsetRef.current;
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // 箭头
-        const arrowLen = 8 * z;
-        const arrowAngle = Math.atan2(ty - sy, tx - sx);
-        ctx.beginPath();
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(
-          tx - arrowLen * Math.cos(arrowAngle - Math.PI / 6),
-          ty - arrowLen * Math.sin(arrowAngle - Math.PI / 6)
-        );
-        ctx.lineTo(
-          tx - arrowLen * Math.cos(arrowAngle + Math.PI / 6),
-          ty - arrowLen * Math.sin(arrowAngle + Math.PI / 6)
-        );
-        ctx.closePath();
-        ctx.fillStyle = edgeColor;
-        ctx.fill();
 
         ctx.restore();
+
+        // Store curve params for particle animation
+        (edge as any)._curve = { sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty };
       });
 
-      // ===== 流动光点动画 =====
+      // ===== Flowing light particles along edges =====
       const particles = flowParticlesRef.current;
       for (const p of particles) {
         const edge = edges.find(e => e.id === p.edgeId);
         if (!edge) continue;
-        const src = nodes.find(n => n.id === edge.source);
-        const tgt = nodes.find(n => n.id === edge.target);
-        if (!src || !tgt) continue;
+        if (!edgeVisible(edge)) continue;
+        const curve = (edge as any)._curve;
+        if (!curve) continue;
 
         p.t += p.speed;
         if (p.t > 1) p.t = 0;
 
-        const sSrc = toScreen(src.x, src.y);
-        const sTgt = toScreen(tgt.x, tgt.y);
-        const srcCfg = NODE_RADIAL_CONFIG[src.type];
-        const tgtCfg = NODE_RADIAL_CONFIG[tgt.type];
+        const t = p.t;
+        // Cubic bezier point calculation
+        const mt = 1 - t;
+        const px = mt * mt * mt * curve.sx + 3 * mt * mt * t * curve.cp1x + 3 * mt * t * t * curve.cp2x + t * t * t * curve.tx;
+        const py = mt * mt * mt * curve.sy + 3 * mt * mt * t * curve.cp1y + 3 * mt * t * t * curve.cp2y + t * t * t * curve.ty;
 
-        const dx = sTgt.x - sSrc.x;
-        const dy = sTgt.y - sSrc.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 1) continue;
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        const sx = sSrc.x + nx * srcCfg.radius * z;
-        const sy = sSrc.y + ny * srcCfg.radius * z;
-        const tx = sTgt.x - nx * tgtCfg.radius * z;
-        const ty = sTgt.y - ny * tgtCfg.radius * z;
-
-        const px = sx + (tx - sx) * p.t;
-        const py = sy + (ty - sy) * p.t;
+        const src = nodes.find(n => n.id === edge.source);
+        if (!src) continue;
+        const srcColor = NODE_TYPE_COLORS[src.type];
 
         ctx.save();
+        // Glow effect
+        ctx.shadowColor = srcColor;
+        ctx.shadowBlur = 8 * z;
         ctx.beginPath();
-        ctx.arc(px, py, 3 * z, 0, Math.PI * 2);
-        ctx.fillStyle = srcCfg.color;
-        ctx.globalAlpha = 0.7;
+        ctx.arc(px, py, Math.max(2, 2.5 * z), 0, Math.PI * 2);
+        ctx.fillStyle = '#FFFFFF';
         ctx.fill();
-        ctx.globalAlpha = 1;
+        // Inner core
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(1.2, 1.5 * z), 0, Math.PI * 2);
+        ctx.fillStyle = srcColor;
+        ctx.fill();
         ctx.restore();
       }
 
-      // ===== 画节点（圆形） =====
+      // ===== Draw nodes (card style) =====
+      // Sort by level so lower levels render on top
+      const sortedNodes = [...nodes].sort((a, b) => (levels.get(a.id) || 0) - (levels.get(b.id) || 0));
+
       sortedNodes.forEach(node => {
+        const animProgress = animMap.get(node.id) || 0;
+        if (animProgress <= 0) return;
+
         const isActive = activeNodeId === node.id;
         const isHovered = hoveredNode === node.id;
-        const cfg = NODE_RADIAL_CONFIG[node.type];
-        const lvl = levels.get(node.id) || 0;
+        const color = NODE_TYPE_COLORS[node.type];
 
         const pos = toScreen(node.x, node.y);
         const nsx = pos.x;
         const nsy = pos.y;
 
-        // hover 放大 1.2x
-        const hoverScale = isHovered ? 1.2 : 1.0;
-        const nr = cfg.radius * z * hoverScale;
+        // Entrance animation: opacity + translateY
+        const nodeOpacity = animProgress;
+        const nodeOffsetY = (1 - animProgress) * 12 * z;
 
-        // 3D深度效果：向外逐渐变暗
-        const depthFade = cfg.depthOpacity;
+        // Hover: float up 3px + enhanced shadow
+        const hoverLift = isHovered ? -3 * z : 0;
+        const finalY = nsy + nodeOffsetY + hoverLift;
+
+        const nw = NODE_CARD_W * z;
+        const nh = NODE_CARD_H * z;
+        const halfW = nw / 2;
+        const halfH = nh / 2;
+        const r = 8 * z; // border radius
 
         ctx.save();
-        ctx.globalAlpha = depthFade;
+        ctx.globalAlpha = nodeOpacity;
 
-        // --- 底影：偏移 (2px, 3px) 的同色系半透明圆 ---
+        // Shadow
         ctx.save();
-        ctx.beginPath();
-        ctx.arc(nsx + 2 * z, nsy + 3 * z, nr, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(cfg.color, 0.25);
-        ctx.fill();
-        ctx.restore();
+        ctx.shadowColor = isHovered ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.08)';
+        ctx.shadowBlur = isHovered ? 12 * z : 4 * z;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = isHovered ? 6 * z : 2 * z;
 
-        // --- 主体：径向渐变填充圆 ---
-        ctx.save();
-
-        // active/hover 发光
-        if (isActive || isHovered) {
-          const glowColor = cfg.color + (isActive ? '88' : '55');
-          ctx.shadowColor = glowColor;
-          ctx.shadowBlur = isActive ? 28 * z : 18 * z;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
-        }
-
-        // 径向渐变：中心亮 → 边缘暗
-        const grad = ctx.createRadialGradient(
-          nsx - nr * 0.25, nsy - nr * 0.25, nr * 0.1,
-          nsx, nsy, nr
-        );
-        if (node.type === 'intent') {
-          // 意图节点：紫色→粉色渐变
-          grad.addColorStop(0, '#A78BFA');
-          grad.addColorStop(0.5, '#8B5CF6');
-          grad.addColorStop(1, '#EC4899');
-        } else {
-          grad.addColorStop(0, lightenColor(cfg.color, 30));
-          grad.addColorStop(0.6, cfg.color);
-          grad.addColorStop(1, darkenColor(cfg.color, 20));
-        }
-        ctx.fillStyle = grad;
-
-        ctx.beginPath();
-        ctx.arc(nsx, nsy, nr, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 白色 2px 边框
-        ctx.shadowColor = 'transparent';
-        ctx.lineWidth = isActive ? 2.5 : 2;
-        ctx.strokeStyle = isActive ? '#FFFFFF' : 'rgba(255,255,255,0.8)';
-        ctx.stroke();
-
-        ctx.restore();
-
-        // --- 图标：圆内的首字母（白色） ---
-        ctx.save();
+        // Card background (white)
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = `bold ${Math.max(10, (cfg.radius * 0.5) * z * hoverScale)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const iconChar = node.type === 'intent' ? '意' :
-          node.type === 'ontology' ? '本' :
-            node.type === 'data' ? '数' :
-              node.type === 'skill' ? '技' :
-                node.type === 'constraint' ? '约' :
-                  node.type === 'simulation' ? '推' : '果';
-        ctx.fillText(iconChar, nsx, nsy);
+        roundRect(ctx, nsx - halfW, finalY - halfH, nw, nh, r);
+        ctx.fill();
         ctx.restore();
 
-        // --- 文字：白色，位于圆下方 10px 处 ---
+        // Left color bar (4px wide)
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(nsx - halfW, finalY - halfH);
+        ctx.lineTo(nsx - halfW + 4 * z, finalY - halfH);
+        ctx.lineTo(nsx - halfW + 4 * z, finalY + halfH);
+        ctx.lineTo(nsx - halfW, finalY + halfH);
+        ctx.closePath();
+        ctx.fill();
+
+        // Active indicator: subtle glow border
+        if (isActive) {
+          ctx.save();
+          ctx.strokeStyle = hexToRgba(color, 0.5);
+          ctx.lineWidth = 2 * z;
+          roundRect(ctx, nsx - halfW - 1 * z, finalY - halfH - 1 * z, nw + 2 * z, nh + 2 * z, r + 1 * z);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Label text (14px -> scaled)
         ctx.save();
-        ctx.fillStyle = isActive ? cfg.color : '#4B5563';
-        ctx.font = isActive
-          ? `bold ${Math.max(9, 11 * z)}px sans-serif`
-          : `500 ${Math.max(9, 11 * z)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const labelY = nsy + nr + 10 * z;
-        const maxLabelWidth = 100 * z;
+        ctx.fillStyle = '#1F2937';
+        ctx.font = `500 ${Math.max(10, 14 * z)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const textX = nsx - halfW + 10 * z;
+        const textY = finalY - 2 * z;
+        const maxTextW = nw - 14 * z;
         let displayLabel = node.label;
-        if (ctx.measureText(displayLabel).width > maxLabelWidth) {
-          while (ctx.measureText(displayLabel + '...').width > maxLabelWidth && displayLabel.length > 0) {
+        if (ctx.measureText(displayLabel).width > maxTextW) {
+          while (ctx.measureText(displayLabel + '...').width > maxTextW && displayLabel.length > 0) {
             displayLabel = displayLabel.slice(0, -1);
           }
           displayLabel += '...';
         }
-        ctx.fillText(displayLabel, nsx, labelY);
+        ctx.fillText(displayLabel, textX, textY);
         ctx.restore();
 
-        // --- active 脉冲效果 ---
-        if (isActive) {
-          const pulseR = nr + 6 * z + Math.sin(Date.now() / 300) * 3 * z;
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(nsx, nsy, pulseR, 0, Math.PI * 2);
-          ctx.strokeStyle = cfg.color + '33';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.restore();
-        }
+        // Sublabel (type label, 10px)
+        ctx.save();
+        ctx.fillStyle = '#6B7280';
+        ctx.font = `400 ${Math.max(8, 10 * z)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const sublabel = NODE_TYPE_CONFIG[node.type].label;
+        ctx.fillText(sublabel, textX, finalY + 12 * z);
+        ctx.restore();
 
         ctx.restore();
       });
@@ -1889,12 +1742,13 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     let found: GraphNode | null = null;
     for (const node of nodes) {
-      const cfg = NODE_RADIAL_CONFIG[node.type];
       const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
       const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
-      const nr = cfg.radius * z * (hoveredNode === node.id ? 1.2 : 1.0);
-      const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
-      if (dist <= nr) {
+      const nw = NODE_CARD_W * z;
+      const nh = NODE_CARD_H * z;
+      const halfW = nw / 2;
+      const halfH = nh / 2;
+      if (mx >= nsx - halfW && mx <= nsx + halfW && my >= nsy - halfH && my <= nsy + halfH) {
         found = node;
         break;
       }
@@ -1902,7 +1756,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     if (found) {
       setHoveredNode(found.id);
-      setTooltipPos({ x: mx + 12, y: my - 12 });
+      setTooltipPos({ x: mx + 16, y: my - 8 });
       setCursorStyle('pointer');
     } else {
       setHoveredNode(null);
@@ -1935,9 +1789,9 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         <div className="flex items-center gap-3">
           {/* Legend */}
           <div className="flex items-center gap-2">
-            {(Object.entries(NODE_RADIAL_CONFIG) as [GraphNodeType, typeof NODE_RADIAL_CONFIG['intent']][]).map(([type, cfg]) => (
+            {(Object.entries(NODE_TYPE_CONFIG) as [GraphNodeType, typeof NODE_TYPE_CONFIG['intent']][]).map(([type, cfg]) => (
               <div key={type} className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
+                <div className="w-2 h-3 rounded-sm" style={{ backgroundColor: cfg.color }} />
                 <span className="text-[10px] text-gray-500">{cfg.label}</span>
               </div>
             ))}
@@ -1959,16 +1813,16 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           <div
             className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-3 pointer-events-none"
             style={{
-              left: Math.min(tooltipPos.x, 600),
-              top: Math.max(tooltipPos.y - 80, 0),
+              left: Math.min(tooltipPos.x, 520),
+              top: Math.max(tooltipPos.y - 100, 4),
               maxWidth: 280,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NODE_RADIAL_CONFIG[hoveredNodeData.type].color }} />
+              <div className="w-1 h-4 rounded-sm" style={{ backgroundColor: NODE_TYPE_COLORS[hoveredNodeData.type] }} />
               <span className="text-xs font-bold text-gray-900">{hoveredNodeData.label}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: NODE_RADIAL_CONFIG[hoveredNodeData.type].color }}>
-                {NODE_RADIAL_CONFIG[hoveredNodeData.type].label}
+              <span className="text-[10px] px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: NODE_TYPE_COLORS[hoveredNodeData.type] }}>
+                {NODE_TYPE_CONFIG[hoveredNodeData.type].label}
               </span>
             </div>
             <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">{hoveredNodeData.description}</p>
