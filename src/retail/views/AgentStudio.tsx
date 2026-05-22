@@ -174,6 +174,7 @@ export default function AgentStudio() {
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<string[]>(['执行层']);
   const [resultTab, setResultTab] = useState<'json' | 'graph'>('json');
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
   const activeRole = ROLE_TEMPLATES.find(r => r.id === activeAgent.roleId);
@@ -781,11 +782,19 @@ export default function AgentStudio() {
 
                 {activeStep === 'result' && (
                   <div className="space-y-4">
-                    <div className="space-y-4">
-                      <label className="block text-sm font-bold text-gray-700 mb-2">输出结构 (JSON Schema)</label>
-                        <textarea
-                          className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
-                          defaultValue={`{
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-bold text-gray-700">输出结构 (JSON Schema)</label>
+                      <button
+                        onClick={() => setShowPreviewModal(true)}
+                        className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
+                      >
+                        <Network size={14} />
+                        预览推演过程
+                      </button>
+                    </div>
+                    <textarea
+                      className="w-full h-48 p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-gray-600 bg-gray-50"
+                      defaultValue={`{
   "best_strategy": "string (方案A/方案B/方案C)",
   "confidence_score": "number",
   "kpi_impact": {
@@ -795,8 +804,7 @@ export default function AgentStudio() {
   },
   "reasoning_chain": ["string"]
 }`}
-                        />
-                    </div>
+                    />
                   </div>
                 )}
               </div>
@@ -804,6 +812,44 @@ export default function AgentStudio() {
           </div>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowPreviewModal(false)}
+          />
+          <div className="relative w-[95vw] h-[90vh] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <Network size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">推演知识图谱</h3>
+                  <p className="text-[10px] text-gray-500">{activeAgent.name} · 完整推理流程可视化</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-400">拖拽移动 · 滚轮缩放 · 点击节点固定</span>
+                <button
+                  onClick={() => setShowPreviewModal(false)}
+                  className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body - Graph */}
+            <div className="flex-1 overflow-hidden bg-gray-50/50">
+              <AgentReasoningGraph activeAgentId={activeAgentId} />
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
