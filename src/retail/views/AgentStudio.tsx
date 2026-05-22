@@ -1091,6 +1091,11 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [autoPlay, setAutoPlay] = useState(true);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [zoom, setZoom] = useState(1.0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const svgRef = React.useRef<SVGSVGElement>(null);
 
   const graph = React.useMemo(() => buildAgentGraph(activeAgentId), [activeAgentId]);
@@ -1148,6 +1153,62 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
   const activeNode = nodes.find(n => n.id === activeNodeId);
 
+  // Z-axis depth configuration
+  const getZDepth = (type: NodeType): number => {
+    if (type === 'intent' || type === 'data') return 2;
+    if (type === 'ontology' || type === 'skill') return 1;
+    return 0; // constraint, simulation, result
+  };
+
+  const getNodeDepthStyle = (type: NodeType) => {
+    const z = getZDepth(type);
+    if (z === 2) {
+      return { scale: 1.15, opacity: 1.0, brightness: 1.0, glowIntensity: 1.0 };
+    }
+    if (z === 1) {
+      return { scale: 1.0, opacity: 1.0, brightness: 1.0, glowIntensity: 0.6 };
+    }
+    return { scale: 0.9, opacity: 0.85, brightness: 0.85, glowIntensity: 0.3 };
+  };
+
+  // Sort nodes by Z depth (render back to front)
+  const sortedNodes = React.useMemo(() => {
+    return [...nodes].sort((a, b) => getZDepth(a.type) - getZDepth(b.type));
+  }, [nodes]);
+
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX,
+      panY,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    setPanX(dragStartRef.current.panX + dx);
+    setPanY(dragStartRef.current.panY + dy);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => Math.max(0.3, Math.min(3.0, prev + delta)));
+  };
+
+  // Edge gradient ID generator
+  const getEdgeGradientId = (edgeId: string) => `edge-grad-${edgeId}`;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -1191,13 +1252,19 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
       </div>
 
       {/* SVG Network Graph */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-x-auto">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
         <svg
           ref={svgRef}
           width={svgWidth}
           height={svgHeight}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="min-w-[800px]"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
         >
           <defs>
             {/* Arrow marker */}
@@ -1215,6 +1282,34 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
             <filter id="shadow-sm" x="-10%" y="-10%" width="120%" height="130%">
               <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.1" />
             </filter>
+            {/* Enhanced glow filters for depth */}
+            <filter id="glow-strong" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="10" result="blur1" />
+              <feGaussianBlur stdDeviation="4" result="blur2" />
+              <feMerge>
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur2" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-medium" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            {/* Drop shadow for edges */}
+            <filter id="edge-shadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="1" dy="2" stdDeviation="2" floodColor="#000" floodOpacity="0.25" />
+            </filter>
+            {/* 3D card shadow filter */}
+            <filter id="card-shadow" x="-20%" y="-20%" width="150%" height="150%">
+              <feDropShadow dx="3" dy="4" stdDeviation="3" floodColor="#000" floodOpacity="0.25" />
+            </filter>
+            <filter id="card-shadow-hover" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="2" dy="6" stdDeviation="8" floodColor="#000" floodOpacity="0.35" />
+            </filter>
             {/* Animated dash pattern */}
             <style>{`
               @keyframes flowDash {
@@ -1224,284 +1319,379 @@ function AgentReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
                 animation: flowDash 1s linear infinite;
               }
               @keyframes pulseGlow {
-                0%, 100% { opacity: 0.6; }
+                0%, 100% { opacity: 0.5; }
                 50% { opacity: 1; }
               }
               .pulse-glow {
                 animation: pulseGlow 1.5s ease-in-out infinite;
               }
             `}</style>
+            {/* Edge gradients for each edge */}
+            {edges.map(edge => {
+              const src = nodes.find(n => n.id === edge.source);
+              const tgt = nodes.find(n => n.id === edge.target);
+              if (!src || !tgt) return null;
+              const srcCfg = NODE_TYPE_CONFIG[src.type];
+              const tgtCfg = NODE_TYPE_CONFIG[tgt.type];
+              return (
+                <linearGradient key={edge.id} id={getEdgeGradientId(edge.id)} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor={srcCfg.color} stopOpacity={0.9} />
+                  <stop offset="100%" stopColor={tgtCfg.color} stopOpacity={0.5} />
+                </linearGradient>
+              );
+            })}
           </defs>
 
-          {/* Background grid */}
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#E5E7EB" strokeWidth="0.5" />
-          </pattern>
-          <rect width={svgWidth} height={svgHeight} fill="url(#grid)" />
+          {/* Background concentric circles (subtle grid) */}
+          <g opacity="0.08">
+            <circle cx="400" cy="360" r="100" fill="none" stroke="#6366F1" strokeWidth="1"/>
+            <circle cx="400" cy="360" r="200" fill="none" stroke="#6366F1" strokeWidth="1"/>
+            <circle cx="400" cy="360" r="300" fill="none" stroke="#6366F1" strokeWidth="1"/>
+          </g>
 
-          {/* Edges */}
-          {edges.map(edge => {
-            const src = nodes.find(n => n.id === edge.source);
-            const tgt = nodes.find(n => n.id === edge.target);
-            if (!src || !tgt) return null;
-            const active = isEdgeActive(edge);
-            const path = buildEdgePath(src, tgt);
-            return (
-              <g key={edge.id}>
-                {/* Background edge */}
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={active ? '#C7D2FE' : '#E5E7EB'}
-                  strokeWidth={active ? 3 : 1.5}
-                  className="transition-all duration-500"
-                />
-                {/* Flowing dash edge */}
-                {active && (
+          {/* Main transform group for pan and zoom */}
+          <g transform={`translate(${panX},${panY}) scale(${zoom})`}>
+            {/* Edges */}
+            {edges.map(edge => {
+              const src = nodes.find(n => n.id === edge.source);
+              const tgt = nodes.find(n => n.id === edge.target);
+              if (!src || !tgt) return null;
+              const active = isEdgeActive(edge);
+              const path = buildEdgePath(src, tgt);
+              const gradId = getEdgeGradientId(edge.id);
+              return (
+                <g key={edge.id}>
+                  {/* Drop shadow line beneath edge */}
                   <path
                     d={path}
                     fill="none"
-                    stroke="#4F46E5"
-                    strokeWidth={2}
-                    strokeDasharray="6 6"
-                    markerEnd="url(#arrowhead-active)"
-                    className="edge-flowing"
+                    stroke="#000000"
+                    strokeWidth={active ? 4 : 2.5}
+                    strokeOpacity="0.15"
+                    transform="translate(1, 2)"
+                    style={{ pointerEvents: 'none' }}
                   />
-                )}
-                {!active && (
+                  {/* Background edge */}
                   <path
                     d={path}
                     fill="none"
-                    stroke="#9CA3AF"
-                    strokeWidth={1.5}
-                    markerEnd="url(#arrowhead-default)"
-                  />
-                )}
-                {/* Edge label */}
-                {edge.label && (
-                  <text
-                    x={(getCenter(src).x + getCenter(tgt).x) / 2}
-                    y={(getCenter(src).y + getCenter(tgt).y) / 2 - 4}
-                    textAnchor="middle"
-                    fill={active ? '#4F46E5' : '#9CA3AF'}
-                    fontSize="9"
-                    fontWeight="500"
+                    stroke={active ? '#C7D2FE' : '#E5E7EB'}
+                    strokeWidth={active ? 3 : 1.5}
                     className="transition-all duration-500"
-                  >
-                    {edge.label}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* Nodes */}
-          {nodes.map(node => {
-            const cfg = NODE_TYPE_CONFIG[node.type];
-            const isActive = activeNodeId === node.id;
-            const isHovered = hoveredNode === node.id;
-            const Icon = TYPE_ICON[node.type];
-            const cx = node.x;
-            const cy = node.y + node.height / 2;
-            const rx = node.width / 2;
-            const ry = node.height / 2;
-
-            return (
-              <g
-                key={node.id}
-                onMouseEnter={() => setHoveredNode(node.id)}
-                onMouseLeave={() => setHoveredNode(null)}
-                className="cursor-pointer"
-                style={{ transition: 'all 0.3s ease' }}
-              >
-                {/* Pulsing glow for active node */}
-                {isActive && (
-                  <ellipse
-                    cx={cx}
-                    cy={cy}
-                    rx={rx + 10}
-                    ry={ry + 10}
-                    fill={cfg.glow}
-                    className="pulse-glow"
                   />
-                )}
+                  {/* Flowing dash edge with gradient */}
+                  {active && (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke={`url(#${gradId})`}
+                      strokeWidth={2.5}
+                      strokeDasharray="6 6"
+                      markerEnd="url(#arrowhead-active)"
+                      className="edge-flowing"
+                      filter="url(#edge-shadow)"
+                    />
+                  )}
+                  {!active && (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke={`url(#${gradId})`}
+                      strokeWidth={1.5}
+                      markerEnd="url(#arrowhead-default)"
+                    />
+                  )}
+                  {/* Edge label */}
+                  {edge.label && (
+                    <text
+                      x={(getCenter(src).x + getCenter(tgt).x) / 2}
+                      y={(getCenter(src).y + getCenter(tgt).y) / 2 - 4}
+                      textAnchor="middle"
+                      fill={active ? '#4F46E5' : '#9CA3AF'}
+                      fontSize="9"
+                      fontWeight="500"
+                      className="transition-all duration-500"
+                    >
+                      {edge.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
 
-                {/* Node shape based on type */}
-                {cfg.shape === 'circle' ? (
-                  <>
-                    <circle
+            {/* Nodes - rendered back-to-front by Z depth */}
+            {sortedNodes.map(node => {
+              const cfg = NODE_TYPE_CONFIG[node.type];
+              const isActive = activeNodeId === node.id;
+              const isHovered = hoveredNode === node.id;
+              const Icon = TYPE_ICON[node.type];
+              const depth = getNodeDepthStyle(node.type);
+              const z = getZDepth(node.type);
+
+              // Apply scale and hover lift
+              const nodeScale = isHovered ? depth.scale * 1.05 : depth.scale;
+              const liftOffset = isHovered ? -4 : 0;
+
+              const cx = node.x;
+              const cy = node.y + node.height / 2;
+              const rx = (node.width / 2) * nodeScale;
+              const ry = (node.height / 2) * nodeScale;
+
+              // Shadow offset for 3D thickness
+              const shadowOffsetX = 3;
+              const shadowOffsetY = 4;
+
+              // Determine glow filter based on depth and hover
+              const glowFilter = isHovered
+                ? 'url(#glow-strong)'
+                : z === 2
+                  ? 'url(#glow-strong)'
+                  : z === 1
+                    ? 'url(#glow-medium)'
+                    : 'none';
+
+              // Determine shadow filter
+              const shadowFilter = isHovered ? 'url(#card-shadow-hover)' : 'url(#card-shadow)';
+
+              // Apply opacity/brightness
+              const nodeOpacity = depth.opacity;
+              const desaturate = depth.brightness < 1;
+
+              return (
+                <g
+                  key={node.id}
+                  onMouseEnter={() => setHoveredNode(node.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  className="cursor-pointer"
+                  style={{ transition: 'all 0.3s ease' }}
+                  opacity={nodeOpacity}
+                >
+                  {/* Pulsing glow for active node - stronger for top layer */}
+                  {isActive && (
+                    <ellipse
+                      cx={cx}
+                      cy={cy + liftOffset}
+                      rx={rx + 12 + z * 4}
+                      ry={ry + 12 + z * 4}
+                      fill={cfg.glow}
+                      className="pulse-glow"
+                      opacity={isHovered ? 1 : 0.8}
+                    />
+                  )}
+
+                  {/* Extra prominent glow for Z=2 nodes */}
+                  {z === 2 && !isActive && (
+                    <ellipse
                       cx={cx}
                       cy={cy}
+                      rx={rx + 8}
+                      ry={ry + 8}
+                      fill={cfg.glow}
+                      opacity={isHovered ? 0.5 : 0.25}
+                    />
+                  )}
+
+                  {/* Bottom shadow layer - simulates thickness */}
+                  {cfg.shape === 'circle' ? (
+                    <circle
+                      cx={cx + shadowOffsetX}
+                      cy={cy + shadowOffsetY + liftOffset}
+                      r={rx}
+                      fill="rgba(0,0,0,0.25)"
+                      className="transition-all duration-300"
+                    />
+                  ) : cfg.shape === 'diamond' ? (
+                    <polygon
+                      points={`${cx + shadowOffsetX},${node.y + liftOffset + shadowOffsetY} ${cx + rx + shadowOffsetX},${cy + liftOffset + shadowOffsetY} ${cx + shadowOffsetX},${node.y + node.height + liftOffset + shadowOffsetY} ${cx - rx + shadowOffsetX},${cy + liftOffset + shadowOffsetY}`}
+                      fill="rgba(0,0,0,0.25)"
+                      className="transition-all duration-300"
+                    />
+                  ) : (
+                    <rect
+                      x={node.x - rx + shadowOffsetX}
+                      y={node.y + liftOffset + shadowOffsetY}
+                      width={node.width * nodeScale}
+                      height={node.height * nodeScale}
+                      rx={10}
+                      fill="rgba(0,0,0,0.25)"
+                      className="transition-all duration-300"
+                    />
+                  )}
+
+                  {/* Main body layer */}
+                  {cfg.shape === 'circle' ? (
+                    <circle
+                      cx={cx}
+                      cy={cy + liftOffset}
                       r={rx}
                       fill={isActive ? cfg.color : cfg.bg}
                       stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
                       strokeWidth={isActive ? 3 : 2}
-                      filter="url(#shadow-sm)"
+                      filter={shadowFilter}
                       className="transition-all duration-300"
+                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
                     />
-                  </>
-                ) : cfg.shape === 'diamond' ? (
-                  <>
+                  ) : cfg.shape === 'diamond' ? (
                     <polygon
-                      points={`${cx},${node.y} ${cx + rx},${cy} ${cx},${node.y + node.height} ${cx - rx},${cy}`}
+                      points={`${cx},${node.y + liftOffset} ${cx + rx},${cy + liftOffset} ${cx},${node.y + node.height + liftOffset} ${cx - rx},${cy + liftOffset}`}
                       fill={isActive ? cfg.color : cfg.bg}
                       stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
                       strokeWidth={isActive ? 3 : 2}
-                      filter="url(#shadow-sm)"
+                      filter={shadowFilter}
                       className="transition-all duration-300"
+                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
                     />
-                  </>
-                ) : (
-                  <>
+                  ) : (
                     <rect
                       x={node.x - rx}
-                      y={node.y}
-                      width={node.width}
-                      height={node.height}
+                      y={node.y + liftOffset}
+                      width={node.width * nodeScale}
+                      height={node.height * nodeScale}
                       rx={10}
                       fill={isActive ? cfg.color : cfg.bg}
                       stroke={isActive ? cfg.color : isHovered ? cfg.color : cfg.border}
                       strokeWidth={isActive ? 3 : 2}
-                      filter="url(#shadow-sm)"
+                      filter={shadowFilter}
                       className="transition-all duration-300"
+                      style={desaturate ? { filter: `${shadowFilter} brightness(${depth.brightness})` } : undefined}
                     />
-                  </>
-                )}
+                  )}
 
-                {/* Icon */}
-                <foreignObject
-                  x={cx - 10}
-                  y={cy - 10 - (node.sublabel ? 6 : 0)}
-                  width={20}
-                  height={20}
-                >
-                  <div className="flex items-center justify-center w-full h-full">
-                    <Icon size={14} color={isActive ? '#FFFFFF' : cfg.color} />
-                  </div>
-                </foreignObject>
+                  {/* Icon */}
+                  <foreignObject
+                    x={cx - 10}
+                    y={cy - 10 - (node.sublabel ? 6 : 0) + liftOffset}
+                    width={20}
+                    height={20}
+                  >
+                    <div className="flex items-center justify-center w-full h-full">
+                      <Icon size={14} color={isActive ? '#FFFFFF' : cfg.color} />
+                    </div>
+                  </foreignObject>
 
-                {/* Label */}
-                <text
-                  x={cx}
-                  y={cy + 14 - (node.sublabel ? 2 : 0)}
-                  textAnchor="middle"
-                  fill={isActive ? '#FFFFFF' : '#1F2937'}
-                  fontSize="11"
-                  fontWeight="bold"
-                  className="transition-all duration-300"
-                >
-                  {node.label}
-                </text>
-
-                {/* Sublabel */}
-                {node.sublabel && (
+                  {/* Label */}
                   <text
                     x={cx}
-                    y={cy + 26}
+                    y={cy + 14 - (node.sublabel ? 2 : 0) + liftOffset}
                     textAnchor="middle"
-                    fill={isActive ? 'rgba(255,255,255,0.85)' : '#6B7280'}
-                    fontSize="9"
+                    fill={isActive ? '#FFFFFF' : '#1F2937'}
+                    fontSize="11"
+                    fontWeight="bold"
                     className="transition-all duration-300"
                   >
-                    {node.sublabel}
+                    {node.label}
                   </text>
-                )}
 
-                {/* Rich tooltip on hover */}
-                {isHovered && (
-                  <g>
-                    <rect
-                      x={Math.min(cx + 20, svgWidth - 220)}
-                      y={Math.max(node.y - 80, 10)}
-                      width={200}
-                      height={node.output ? 100 : 72}
-                      rx={10}
-                      fill="#FFFFFF"
-                      stroke="#E5E7EB"
-                      strokeWidth={1}
-                      filter="url(#shadow-sm)"
-                    />
+                  {/* Sublabel */}
+                  {node.sublabel && (
                     <text
-                      x={Math.min(cx + 32, svgWidth - 208)}
-                      y={Math.max(node.y - 60, 30)}
-                      fill={cfg.color}
-                      fontSize="11"
-                      fontWeight="bold"
-                    >
-                      {node.label}
-                    </text>
-                    <text
-                      x={Math.min(cx + 32, svgWidth - 208)}
-                      y={Math.max(node.y - 44, 46)}
-                      fill="#6B7280"
+                      x={cx}
+                      y={cy + 26 + liftOffset}
+                      textAnchor="middle"
+                      fill={isActive ? 'rgba(255,255,255,0.85)' : '#6B7280'}
                       fontSize="9"
+                      className="transition-all duration-300"
                     >
-                      {node.description && node.description.length > 30 ? node.description.slice(0, 30) + '...' : node.description}
+                      {node.sublabel}
                     </text>
-                    {node.skills && node.skills.length > 0 && (
-                      <text
-                        x={Math.min(cx + 32, svgWidth - 208)}
-                        y={Math.max(node.y - 30, 60)}
-                        fill="#4F46E5"
-                        fontSize="8"
-                        fontWeight="500"
-                      >
-                        Skills: {node.skills.slice(0, 2).join(', ')}
-                      </text>
-                    )}
-                    {node.dataSources && node.dataSources.length > 0 && (
-                      <text
-                        x={Math.min(cx + 32, svgWidth - 208)}
-                        y={Math.max(node.y - 18, 72)}
-                        fill="#0891B2"
-                        fontSize="8"
-                        fontWeight="500"
-                      >
-                        Data: {node.dataSources.slice(0, 2).join(', ')}
-                      </text>
-                    )}
-                    {node.output && (
-                      <text
-                        x={Math.min(cx + 32, svgWidth - 208)}
-                        y={Math.max(node.y - 4, 86)}
-                        fill="#059669"
-                        fontSize="8"
-                        fontWeight="500"
-                      >
-                        {node.output.length > 35 ? node.output.slice(0, 35) + '...' : node.output}
-                      </text>
-                    )}
-                  </g>
-                )}
-              </g>
-            );
-          })}
+                  )}
 
-          {/* Active node output banner at bottom */}
-          {activeNode?.output && (
-            <g>
-              <rect
-                x={padding}
-                y={svgHeight - 44}
-                width={svgWidth - padding * 2}
-                height={32}
-                rx={8}
-                fill="#ECFDF5"
-                stroke="#A7F3D0"
-                strokeWidth={1}
-              />
-              <text
-                x={svgWidth / 2}
-                y={svgHeight - 24}
-                textAnchor="middle"
-                fill="#059669"
-                fontSize="11"
-                fontWeight="500"
-              >
-                {activeNode.output}
-              </text>
-            </g>
-          )}
+                  {/* Rich tooltip on hover */}
+                  {isHovered && (
+                    <g>
+                      <rect
+                        x={Math.min(cx + 20, svgWidth - 220)}
+                        y={Math.max(node.y - 80 + liftOffset, 10)}
+                        width={200}
+                        height={node.output ? 100 : 72}
+                        rx={10}
+                        fill="#FFFFFF"
+                        stroke="#E5E7EB"
+                        strokeWidth={1}
+                        filter="url(#shadow-sm)"
+                      />
+                      <text
+                        x={Math.min(cx + 32, svgWidth - 208)}
+                        y={Math.max(node.y - 60 + liftOffset, 30)}
+                        fill={cfg.color}
+                        fontSize="11"
+                        fontWeight="bold"
+                      >
+                        {node.label}
+                      </text>
+                      <text
+                        x={Math.min(cx + 32, svgWidth - 208)}
+                        y={Math.max(node.y - 44 + liftOffset, 46)}
+                        fill="#6B7280"
+                        fontSize="9"
+                      >
+                        {node.description && node.description.length > 30 ? node.description.slice(0, 30) + '...' : node.description}
+                      </text>
+                      {node.skills && node.skills.length > 0 && (
+                        <text
+                          x={Math.min(cx + 32, svgWidth - 208)}
+                          y={Math.max(node.y - 30 + liftOffset, 60)}
+                          fill="#4F46E5"
+                          fontSize="8"
+                          fontWeight="500"
+                        >
+                          Skills: {node.skills.slice(0, 2).join(', ')}
+                        </text>
+                      )}
+                      {node.dataSources && node.dataSources.length > 0 && (
+                        <text
+                          x={Math.min(cx + 32, svgWidth - 208)}
+                          y={Math.max(node.y - 18 + liftOffset, 72)}
+                          fill="#0891B2"
+                          fontSize="8"
+                          fontWeight="500"
+                        >
+                          Data: {node.dataSources.slice(0, 2).join(', ')}
+                        </text>
+                      )}
+                      {node.output && (
+                        <text
+                          x={Math.min(cx + 32, svgWidth - 208)}
+                          y={Math.max(node.y - 4 + liftOffset, 86)}
+                          fill="#059669"
+                          fontSize="8"
+                          fontWeight="500"
+                        >
+                          {node.output.length > 35 ? node.output.slice(0, 35) + '...' : node.output}
+                        </text>
+                      )}
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Active node output banner at bottom */}
+            {activeNode?.output && (
+              <g>
+                <rect
+                  x={padding}
+                  y={svgHeight - 44}
+                  width={svgWidth - padding * 2}
+                  height={32}
+                  rx={8}
+                  fill="#ECFDF5"
+                  stroke="#A7F3D0"
+                  strokeWidth={1}
+                />
+                <text
+                  x={svgWidth / 2}
+                  y={svgHeight - 24}
+                  textAnchor="middle"
+                  fill="#059669"
+                  fontSize="11"
+                  fontWeight="500"
+                >
+                  {activeNode.output}
+                </text>
+              </g>
+            )}
+          </g>
         </svg>
       </div>
 

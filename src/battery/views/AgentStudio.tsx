@@ -1286,6 +1286,52 @@ function drawNodeShape(
   ctx.restore();
 }
 
+// Helper: draw only the path (no fill/stroke) for a node shape, used by 3D rendering
+function drawNodeShapePath(
+  ctx: CanvasRenderingContext2D,
+  type: GraphNodeType,
+  x: number, y: number,
+  w: number, h: number
+) {
+  const r = Math.min(w, h) * 0.2;
+  switch (type) {
+    case 'ontology':
+      ctx.arc(x, y, w / 2, 0, Math.PI * 2);
+      break;
+    case 'data':
+      ctx.moveTo(x, y - h / 2);
+      ctx.lineTo(x + w / 2, y);
+      ctx.lineTo(x, y + h / 2);
+      ctx.lineTo(x - w / 2, y);
+      ctx.closePath();
+      break;
+    case 'skill': {
+      const hexR = Math.max(w, h) / 2;
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const px = x + hexR * Math.cos(angle);
+        const py = y + hexR * Math.sin(angle) * 0.6;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    }
+    default:
+      ctx.moveTo(x - w / 2 + r, y - h / 2);
+      ctx.lineTo(x + w / 2 - r, y - h / 2);
+      ctx.quadraticCurveTo(x + w / 2, y - h / 2, x + w / 2, y - h / 2 + r);
+      ctx.lineTo(x + w / 2, y + h / 2 - r);
+      ctx.quadraticCurveTo(x + w / 2, y + h / 2, x + w / 2 - r, y + h / 2);
+      ctx.lineTo(x - w / 2 + r, y + h / 2);
+      ctx.quadraticCurveTo(x - w / 2, y + h / 2, x - w / 2, y + h / 2 - r);
+      ctx.lineTo(x - w / 2, y - h / 2 + r);
+      ctx.quadraticCurveTo(x - w / 2, y - h / 2, x - w / 2 + r, y - h / 2);
+      ctx.closePath();
+      break;
+  }
+}
+
 function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -1294,12 +1340,36 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
   const animationRef = React.useRef<number>(0);
   const dashOffsetRef = React.useRef(0);
 
+  // Pan / Zoom refs (not state, to avoid re-renders during interaction)
+  const panXRef = React.useRef(0);
+  const panYRef = React.useRef(0);
+  const zoomRef = React.useRef(1);
+  const isDraggingRef = React.useRef(false);
+  const lastMouseRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [cursorStyle, setCursorStyle] = React.useState('grab');
+
   const graph = AGENT_GRAPHS[activeAgentId] || AGENT_GRAPHS.a1;
   const { nodes, edges } = graph;
 
+  // Z-layer config based on node type
+  const getNodeDepthConfig = (type: GraphNodeType) => {
+    switch (type) {
+      case 'intent':
+      case 'data':
+        return { z: 2, scale: 1.15, brightness: 1, opacity: 1, glowIntensity: 1 };
+      case 'ontology':
+      case 'skill':
+        return { z: 1, scale: 1.0, brightness: 1, opacity: 1, glowIntensity: 0.6 };
+      case 'constraint':
+      case 'simulation':
+      case 'result':
+      default:
+        return { z: 0, scale: 0.9, brightness: 0.92, opacity: 0.85, glowIntensity: 0.3 };
+    }
+  };
+
   // Auto-play: nodes light up in sequence along the reasoning path
   useEffect(() => {
-    // Define the reasoning sequence
     const sequence = nodes.map(n => n.id);
     let idx = 0;
     setActiveNodeId(sequence[0]);
@@ -1310,7 +1380,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     return () => clearInterval(timer);
   }, [activeAgentId, nodes]);
 
-  // Canvas rendering
+  // Canvas rendering + interactions
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1326,26 +1396,135 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
     canvas.style.height = cssHeight + 'px';
     ctx.scale(dpr, dpr);
 
+    // Drag handlers
+    const handleMouseDown = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // Only start drag if not hovering a node
+      let onNode = false;
+      const z = zoomRef.current;
+      const px = panXRef.current;
+      const py = panYRef.current;
+      for (const node of nodes) {
+        const depth = getNodeDepthConfig(node.type);
+        const ns = node;
+        const nx = (ns.x - cssWidth / 2) * z + cssWidth / 2 + px;
+        const ny = (ns.y - cssHeight / 2) * z + cssHeight / 2 + py;
+        const nw = ns.width * depth.scale * z;
+        const nh = ns.height * depth.scale * z;
+        const halfW = nw / 2;
+        const halfH = nh / 2;
+        if (ns.type === 'ontology') {
+          const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
+          if (dist <= halfW) { onNode = true; break; }
+        } else if (ns.type === 'data') {
+          const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
+          if (dist <= Math.min(halfW, halfH)) { onNode = true; break; }
+        } else {
+          if (mx >= nx - halfW && mx <= nx + halfW && my >= ny - halfH && my <= ny + halfH) {
+            onNode = true; break;
+          }
+        }
+      }
+      if (!onNode) {
+        isDraggingRef.current = true;
+        lastMouseRef.current = { x: e.clientX, y: e.clientY };
+        setCursorStyle('grabbing');
+      }
+    };
+
+    const handleMouseMoveDrag = (e: MouseEvent) => {
+      if (!isDraggingRef.current || !lastMouseRef.current) return;
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      panXRef.current += dx;
+      panYRef.current += dy;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      lastMouseRef.current = null;
+      setCursorStyle('grab');
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const oldZoom = zoomRef.current;
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      let newZoom = oldZoom * zoomFactor;
+      newZoom = Math.max(0.3, Math.min(3, newZoom));
+
+      // Zoom centered on mouse position
+      const worldX = (mx - cssWidth / 2 - panXRef.current) / oldZoom + cssWidth / 2;
+      const worldY = (my - cssHeight / 2 - panYRef.current) / oldZoom + cssHeight / 2;
+      panXRef.current = mx - cssWidth / 2 - (worldX - cssWidth / 2) * newZoom;
+      panYRef.current = my - cssHeight / 2 - (worldY - cssHeight / 2) * newZoom;
+      zoomRef.current = newZoom;
+    };
+
+    canvas.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMoveDrag);
+    window.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Helper: transform world coordinates to screen
+    const toScreen = (wx: number, wy: number) => {
+      const z = zoomRef.current;
+      const px = panXRef.current;
+      const py = panYRef.current;
+      return {
+        x: (wx - cssWidth / 2) * z + cssWidth / 2 + px,
+        y: (wy - cssHeight / 2) * z + cssHeight / 2 + py,
+      };
+    };
+
     const render = () => {
       ctx.clearRect(0, 0, cssWidth, cssHeight);
+      const z = zoomRef.current;
+      const px = panXRef.current;
+      const py = panYRef.current;
 
-      // Background grid
-      ctx.strokeStyle = '#F3F4F6';
+      // Background concentric circles
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.08)';
       ctx.lineWidth = 1;
-      for (let gx = 0; gx < cssWidth; gx += 40) {
+      [100, 200, 300].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(cssWidth / 2, cssHeight / 2, r * z, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      // Background grid (subtle)
+      ctx.strokeStyle = 'rgba(243, 244, 246, 0.5)';
+      ctx.lineWidth = 0.5;
+      const gridSize = 40 * z;
+      const startX = ((px % gridSize) + gridSize) % gridSize;
+      const startY = ((py % gridSize) + gridSize) % gridSize;
+      for (let gx = startX; gx < cssWidth; gx += gridSize) {
         ctx.beginPath();
         ctx.moveTo(gx, 0);
         ctx.lineTo(gx, cssHeight);
         ctx.stroke();
       }
-      for (let gy = 0; gy < cssHeight; gy += 40) {
+      for (let gy = startY; gy < cssHeight; gy += gridSize) {
         ctx.beginPath();
         ctx.moveTo(0, gy);
         ctx.lineTo(cssWidth, gy);
         ctx.stroke();
       }
 
-      // Draw edges
+      // Sort nodes by Z depth for proper layering
+      const sortedNodes = [...nodes].sort((a, b) => {
+        const za = getNodeDepthConfig(a.type).z;
+        const zb = getNodeDepthConfig(b.type).z;
+        return za - zb;
+      });
+
+      // Draw edges first (behind nodes)
       dashOffsetRef.current -= 0.5;
       edges.forEach(edge => {
         const src = nodes.find(n => n.id === edge.source);
@@ -1356,31 +1535,33 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const isTargetActive = activeNodeId === tgt.id;
         const isEdgeActive = isSourceActive || isTargetActive;
 
-        // Calculate connection points
-        let sx = src.x, sy = src.y, tx = tgt.x, ty = tgt.y;
-        // Adjust start/end to edge of node shapes
+        const sSrc = toScreen(src.x, src.y);
+        const sTgt = toScreen(tgt.x, tgt.y);
+
+        let sx = sSrc.x, sy = sSrc.y, tx = sTgt.x, ty = sTgt.y;
         const dx = tx - sx;
         const dy = ty - sy;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) return;
         const nx = dx / dist;
         const ny = dy / dist;
 
-        // Offset from node center to edge
-        const srcOffset = src.type === 'ontology' ? src.width / 2 + 2 :
-          src.type === 'data' ? Math.min(src.width, src.height) / 2 + 2 :
-            src.type === 'skill' ? Math.max(src.width, src.height) / 2 + 2 :
-              src.width / 2 + 4;
-        const tgtOffset = tgt.type === 'ontology' ? tgt.width / 2 + 6 :
-          tgt.type === 'data' ? Math.min(tgt.width, tgt.height) / 2 + 6 :
-            tgt.type === 'skill' ? Math.max(tgt.width, tgt.height) / 2 + 6 :
-              tgt.width / 2 + 8;
+        const srcDepth = getNodeDepthConfig(src.type);
+        const tgtDepth = getNodeDepthConfig(tgt.type);
+        const srcOffset = src.type === 'ontology' ? src.width * srcDepth.scale * z / 2 + 2 :
+          src.type === 'data' ? Math.min(src.width, src.height) * srcDepth.scale * z / 2 + 2 :
+            src.type === 'skill' ? Math.max(src.width, src.height) * srcDepth.scale * z / 2 + 2 :
+              src.width * srcDepth.scale * z / 2 + 4;
+        const tgtOffset = tgt.type === 'ontology' ? tgt.width * tgtDepth.scale * z / 2 + 6 :
+          tgt.type === 'data' ? Math.min(tgt.width, tgt.height) * tgtDepth.scale * z / 2 + 6 :
+            tgt.type === 'skill' ? Math.max(tgt.width, tgt.height) * tgtDepth.scale * z / 2 + 6 :
+              tgt.width * tgtDepth.scale * z / 2 + 8;
 
         sx += nx * srcOffset;
         sy += ny * srcOffset;
         tx -= nx * tgtOffset;
         ty -= ny * tgtOffset;
 
-        // Bezier curve
         const midY = (sy + ty) / 2;
         const cp1x = sx;
         const cp1y = midY;
@@ -1388,12 +1569,22 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         const cp2y = midY;
 
         ctx.save();
+
+        // Edge drop shadow (subtle)
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
+        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.lineWidth = (isEdgeActive ? 2.5 : 1.5) + 2;
+        ctx.stroke();
+
+        // Main edge with gradient-like effect (brighter at source, darker at target)
         ctx.beginPath();
         ctx.moveTo(sx, sy);
         ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
 
-        // Edge styling
-        const edgeColor = isEdgeActive ? NODE_TYPE_CONFIG[src.type].color : '#D1D5DB';
+        const srcColor = NODE_TYPE_CONFIG[src.type].color;
+        const edgeColor = isEdgeActive ? srcColor : '#D1D5DB';
         ctx.strokeStyle = edgeColor;
         ctx.lineWidth = isEdgeActive ? 2.5 : 1.5;
 
@@ -1405,7 +1596,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         ctx.setLineDash([]);
 
         // Arrowhead
-        const arrowLen = 10;
+        const arrowLen = 10 * z;
         const arrowAngle = Math.atan2(ty - cp2y, tx - cp2x);
         ctx.beginPath();
         ctx.moveTo(tx, ty);
@@ -1424,28 +1615,103 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
         ctx.restore();
       });
 
-      // Draw nodes
-      nodes.forEach(node => {
+      // Draw nodes (sorted by Z)
+      sortedNodes.forEach(node => {
         const isActive = activeNodeId === node.id;
         const isHovered = hoveredNode === node.id;
         const config = NODE_TYPE_CONFIG[node.type];
+        const depth = getNodeDepthConfig(node.type);
 
-        drawNodeShape(ctx, node.type, node.x, node.y, node.width, node.height, config.color, isActive, isHovered);
+        const pos = toScreen(node.x, node.y);
+        const nsx = pos.x;
+        const nsy = pos.y;
+        const nw = node.width * depth.scale * z;
+        const nh = node.height * depth.scale * z;
 
-        // Draw icon
-        const iconSize = 14;
-        const iconX = node.x - node.width / 2 + 18;
-        const iconY = node.y - 1;
+        // Hover lift effect
+        const liftOffset = isHovered ? -4 * z : 0;
+        const shadowOffsetX = isHovered ? 2 * z : 3 * z;
+        const shadowOffsetY = isHovered ? 6 * z : 4 * z;
+        const shadowBlur = isHovered ? 20 * z : 10 * z;
+        const shadowOpacity = isHovered ? 0.35 : 0.2;
+
+        ctx.save();
+
+        // Apply brightness/desaturation for bottom layers
+        if (depth.opacity < 1) {
+          ctx.globalAlpha = depth.opacity;
+        }
+
+        // === Layer 1: Bottom shadow (thickness) ===
+        ctx.save();
+        ctx.shadowColor = `rgba(0,0,0,${shadowOpacity})`;
+        ctx.shadowBlur = shadowBlur;
+        ctx.shadowOffsetX = shadowOffsetX;
+        ctx.shadowOffsetY = shadowOffsetY;
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        drawNodeShapePath(ctx, node.type, nsx + shadowOffsetX * 0.3, nsy + shadowOffsetY * 0.3 + liftOffset, nw, nh);
+        ctx.fill();
+        ctx.restore();
+
+        // === Layer 2: Main body with glow ===
+        ctx.save();
+        if (isActive || isHovered) {
+          const glowColor = config.color + (isActive ? '99' : '66');
+          const glowBlur = isActive ? 24 * z : 16 * z;
+          ctx.shadowColor = glowColor;
+          ctx.shadowBlur = glowBlur;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        }
+
+        // Gradient fill
+        const grad = ctx.createLinearGradient(nsx - nw / 2, nsy - nh / 2, nsx + nw / 2, nsy + nh / 2);
+        if (isActive) {
+          grad.addColorStop(0, '#FFFFFF');
+          grad.addColorStop(1, config.bg);
+        } else if (isHovered) {
+          grad.addColorStop(0, '#FAFAFA');
+          grad.addColorStop(1, config.bg);
+        } else {
+          grad.addColorStop(0, '#FFFFFF');
+          grad.addColorStop(1, config.bg);
+        }
+        ctx.fillStyle = grad;
+
+        drawNodeShapePath(ctx, node.type, nsx, nsy + liftOffset, nw, nh);
+        ctx.fill();
+
+        // Stroke
+        ctx.shadowColor = 'transparent';
+        ctx.lineWidth = isActive ? 2.5 : (isHovered ? 2 : 1.5);
+        ctx.strokeStyle = isActive ? config.color : (isHovered ? '#9CA3AF' : '#E5E7EB');
+        ctx.stroke();
+
+        // Extra border for constraint
+        if (node.type === 'constraint') {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = config.color + '44';
+          ctx.setLineDash([4, 3]);
+          drawNodeShapePath(ctx, node.type, nsx, nsy + liftOffset, nw, nh);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+
+        // === Layer 3: Text / Icon ===
+        const iconSize = 14 * z;
+        const iconX = nsx - nw / 2 + 18 * z;
+        const iconY = nsy + liftOffset - 1;
 
         // Icon background circle
         ctx.beginPath();
-        ctx.arc(iconX, iconY, 10, 0, Math.PI * 2);
+        ctx.arc(iconX, iconY, 10 * z, 0, Math.PI * 2);
         ctx.fillStyle = isActive ? config.color : config.bg;
         ctx.fill();
 
-        // Icon text (fallback since we can't render React components on canvas)
+        // Icon text
         ctx.fillStyle = isActive ? '#FFFFFF' : config.color;
-        ctx.font = 'bold 10px sans-serif';
+        ctx.font = `bold ${Math.max(8, 10 * z)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const iconChar = node.type === 'intent' ? 'I' :
@@ -1458,11 +1724,11 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
         // Node label
         ctx.fillStyle = isActive ? config.color : '#1F2937';
-        ctx.font = isActive ? 'bold 11px sans-serif' : '500 11px sans-serif';
+        ctx.font = isActive ? `bold ${Math.max(8, 11 * z)}px sans-serif` : `500 ${Math.max(8, 11 * z)}px sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        const labelX = iconX + 16;
-        const maxLabelWidth = node.width - 40;
+        const labelX = iconX + 16 * z;
+        const maxLabelWidth = nw - 40 * z;
         let displayLabel = node.label;
         if (ctx.measureText(displayLabel).width > maxLabelWidth) {
           while (ctx.measureText(displayLabel + '...').width > maxLabelWidth && displayLabel.length > 0) {
@@ -1470,66 +1736,86 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           }
           displayLabel += '...';
         }
-        ctx.fillText(displayLabel, labelX, node.y);
+        ctx.fillText(displayLabel, labelX, nsy + liftOffset);
 
         // Active pulse effect
         if (isActive) {
-          const pulseRadius = Math.max(node.width, node.height) / 2 + 8 + Math.sin(Date.now() / 300) * 4;
+          const pulseRadius = (Math.max(node.width, node.height) / 2 + 8 + Math.sin(Date.now() / 300) * 4) * depth.scale * z;
           ctx.beginPath();
           if (node.type === 'ontology') {
-            ctx.arc(node.x, node.y, pulseRadius, 0, Math.PI * 2);
+            ctx.arc(nsx, nsy + liftOffset, pulseRadius, 0, Math.PI * 2);
           } else if (node.type === 'data') {
-            ctx.moveTo(node.x, node.y - pulseRadius);
-            ctx.lineTo(node.x + pulseRadius, node.y);
-            ctx.lineTo(node.x, node.y + pulseRadius);
-            ctx.lineTo(node.x - pulseRadius, node.y);
+            ctx.moveTo(nsx, nsy + liftOffset - pulseRadius);
+            ctx.lineTo(nsx + pulseRadius, nsy + liftOffset);
+            ctx.lineTo(nsx, nsy + liftOffset + pulseRadius);
+            ctx.lineTo(nsx - pulseRadius, nsy + liftOffset);
             ctx.closePath();
           } else {
-            const pr = 6;
-            ctx.moveTo(node.x - pulseRadius + pr, node.y - pulseRadius * 0.6);
-            ctx.lineTo(node.x + pulseRadius - pr, node.y - pulseRadius * 0.6);
-            ctx.quadraticCurveTo(node.x + pulseRadius, node.y - pulseRadius * 0.6, node.x + pulseRadius, node.y - pulseRadius * 0.6 + pr);
-            ctx.lineTo(node.x + pulseRadius, node.y + pulseRadius * 0.6 - pr);
-            ctx.quadraticCurveTo(node.x + pulseRadius, node.y + pulseRadius * 0.6, node.x + pulseRadius - pr, node.y + pulseRadius * 0.6);
-            ctx.lineTo(node.x - pulseRadius + pr, node.y + pulseRadius * 0.6);
-            ctx.quadraticCurveTo(node.x - pulseRadius, node.y + pulseRadius * 0.6, node.x - pulseRadius, node.y + pulseRadius * 0.6 - pr);
-            ctx.lineTo(node.x - pulseRadius, node.y - pulseRadius * 0.6 + pr);
-            ctx.quadraticCurveTo(node.x - pulseRadius, node.y - pulseRadius * 0.6, node.x - pulseRadius + pr, node.y - pulseRadius * 0.6);
+            const pr = 6 * z;
+            const py = nsy + liftOffset;
+            ctx.moveTo(nsx - pulseRadius + pr, py - pulseRadius * 0.6);
+            ctx.lineTo(nsx + pulseRadius - pr, py - pulseRadius * 0.6);
+            ctx.quadraticCurveTo(nsx + pulseRadius, py - pulseRadius * 0.6, nsx + pulseRadius, py - pulseRadius * 0.6 + pr);
+            ctx.lineTo(nsx + pulseRadius, py + pulseRadius * 0.6 - pr);
+            ctx.quadraticCurveTo(nsx + pulseRadius, py + pulseRadius * 0.6, nsx + pulseRadius - pr, py + pulseRadius * 0.6);
+            ctx.lineTo(nsx - pulseRadius + pr, py + pulseRadius * 0.6);
+            ctx.quadraticCurveTo(nsx - pulseRadius, py + pulseRadius * 0.6, nsx - pulseRadius, py + pulseRadius * 0.6 - pr);
+            ctx.lineTo(nsx - pulseRadius, py - pulseRadius * 0.6 + pr);
+            ctx.quadraticCurveTo(nsx - pulseRadius, py - pulseRadius * 0.6, nsx - pulseRadius + pr, py - pulseRadius * 0.6);
             ctx.closePath();
           }
           ctx.strokeStyle = config.color + '33';
           ctx.lineWidth = 2;
           ctx.stroke();
         }
+
+        ctx.restore();
       });
 
       animationRef.current = requestAnimationFrame(render);
     };
 
     render();
-    return () => cancelAnimationFrame(animationRef.current);
+    return () => {
+      cancelAnimationFrame(animationRef.current);
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMoveDrag);
+      window.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('wheel', handleWheel);
+    };
   }, [nodes, edges, activeNodeId, hoveredNode]);
 
-  // Mouse interaction
+  // Mouse interaction (hover detection)
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const z = zoomRef.current;
+    const px = panXRef.current;
+    const py = panYRef.current;
+    const cssWidth = 840;
+    const cssHeight = 640;
 
     let found: GraphNode | null = null;
     for (const node of nodes) {
-      const halfW = node.width / 2;
-      const halfH = node.height / 2;
+      const depth = getNodeDepthConfig(node.type);
+      const nsx = (node.x - cssWidth / 2) * z + cssWidth / 2 + px;
+      const nsy = (node.y - cssHeight / 2) * z + cssHeight / 2 + py;
+      const nw = node.width * depth.scale * z;
+      const nh = node.height * depth.scale * z;
+      const halfW = nw / 2;
+      const halfH = nh / 2;
       if (node.type === 'ontology') {
-        const dist = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
         if (dist <= halfW) found = node;
       } else if (node.type === 'data') {
-        const dist = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        const dist = Math.sqrt((mx - nsx) ** 2 + (my - nsy) ** 2);
         if (dist <= Math.min(halfW, halfH)) found = node;
       } else {
-        if (x >= node.x - halfW && x <= node.x + halfW && y >= node.y - halfH && y <= node.y + halfH) {
+        if (mx >= nsx - halfW && mx <= nsx + halfW && my >= nsy - halfH && my <= nsy + halfH) {
           found = node;
         }
       }
@@ -1538,16 +1824,19 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
 
     if (found) {
       setHoveredNode(found.id);
-      setTooltipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 12 });
+      setTooltipPos({ x: mx + 12, y: my - 12 });
+      setCursorStyle('pointer');
     } else {
       setHoveredNode(null);
       setTooltipPos(null);
+      setCursorStyle(isDraggingRef.current ? 'grabbing' : 'grab');
     }
   };
 
   const handleMouseLeave = () => {
     setHoveredNode(null);
     setTooltipPos(null);
+    setCursorStyle('grab');
   };
 
   const hoveredNodeData = hoveredNode ? nodes.find(n => n.id === hoveredNode) : null;
@@ -1584,7 +1873,7 @@ function BatteryReasoningGraph({ activeAgentId }: { activeAgentId: string }) {
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          style={{ width: 840, height: 640, cursor: hoveredNode ? 'pointer' : 'default' }}
+          style={{ width: 840, height: 640, cursor: cursorStyle }}
         />
 
         {/* Rich tooltip */}
