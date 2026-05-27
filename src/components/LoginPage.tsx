@@ -3,13 +3,14 @@ import { Cpu, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface LoginPageProps {
-  onLogin: (industry: 'battery' | 'retail') => void;
+  onLogin: (industry: 'battery' | 'retail' | 'energy') => void;
 }
 
-function detectIndustry(username: string): 'battery' | 'retail' | null {
+function detectIndustry(username: string): 'battery' | 'retail' | 'energy' | null {
   const lower = username.trim();
   if (lower === '零售') return 'retail';
   if (lower === '锂电') return 'battery';
+  if (lower === '能源') return 'energy';
   return null;
 }
 
